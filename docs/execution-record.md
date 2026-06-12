@@ -17,6 +17,21 @@ Goal A does not claim large-scale graph sessions are implemented. Graph-session
 contracts can be designed as follow-up work, but this repo split should not block
 that direction.
 
+## Current Acceptance Map
+
+This map is the working verifier for Goal A. Treat open PR evidence as
+provisional until the relevant stacks are merged.
+
+| Goal A requirement | Current evidence | Remaining merge dependency |
+| --- | --- | --- |
+| `gaia-research` exists as a standalone repo | Repo `SiliconEinstein/gaia-research`, package metadata, wheel build, installed-wheel smoke | Merge gaia-research PR stack |
+| Gaia core provides public API surfaces | Gaia PR #770 declares inquiry review state/API; gaia-research PR #7 verifies exact callables `run_review` and `render_markdown` | Merge Gaia #770 and gaia-research #7+ |
+| `gaia research` reconnects through plugin/entry point | Gaia PR #769 loads `gaia.cli_plugins`; Gaia PR #772 hands off legacy `research`; gaia-research PR #5 exposes plugin command; PR #12 smoke can run `gaia research doctor` / `gaia research review --json` against Gaia #772 via `GAIA_CORE_SPEC` | Merge Gaia #769 then #772; merge gaia-research #5/#12 |
+| CI proves `gaia-research -> Gaia core` one-way dependency | gaia-research PR #7 callable contract, PR #12 installed-wheel smoke, PR #13 source-boundary test | Merge gaia-research #7/#12/#13 |
+| Current review-run migrates with parity | gaia-research PR #2 disk contract, #3 runner bridge, #4 standalone CLI, #5 plugin command, #9 status, #10/#11 JSON, #12 Gaia CLI review smoke | Merge gaia-research #2-#12 and Gaia #772 |
+| `.gaia/research/**` ownership is clear | Gaia PR #771 namespace declaration; gaia-research PR #2/#3 tests write `.gaia/research/runs/**` and assert no `.gaia/research_loop` | Merge Gaia #771 and gaia-research #2+ |
+| No large-scale graph support is claimed | README and this execution record state graph sessions are follow-up, not implemented | Preserve wording while merging |
+
 ## PR Log
 
 ### PR #1: CLI Plugin Entry Point
