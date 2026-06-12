@@ -146,6 +146,22 @@ Verifier:
 
 - `scripts/audit_goal_a.sh`
 
+### PR #16: CI Uses Goal A Audit
+
+Branch: `feature/ci-run-goal-a-audit`
+
+Learning:
+
+- CI and the final acceptance audit should use the same script so the repo does
+  not maintain two subtly different definitions of "green."
+- The workflow should still install dev dependencies explicitly, then delegate
+  test, lint, typecheck, wheel build, and installed-wheel smoke to
+  `scripts/audit_goal_a.sh`.
+
+Verifier:
+
+- `scripts/audit_goal_a.sh`
+
 ### PR #2: Review-Run Disk Contract
 
 Branch: `feature/review-run-contract`
