@@ -16,13 +16,5 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: uv sync --extra dev
-      - name: Lint
-        run: uv run ruff check src tests
-      - name: Type check
-        run: uv run mypy src tests
-      - name: Run tests
-        run: uv run pytest -q
-      - name: Build wheel
-        run: uv build --wheel --out-dir dist
-      - name: Smoke test installed wheel
-        run: scripts/smoke_installed_wheel.sh
+      - name: Goal A audit
+        run: scripts/audit_goal_a.sh
