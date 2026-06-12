@@ -170,3 +170,20 @@ Verifier:
 - `uv run ruff check src tests`
 - `uv run mypy src tests`
 - `uv build --wheel --out-dir dist`
+
+### PR #8: README Review-Run Acceptance Guide
+
+Branch: `feature/readme-review-run`
+
+Learning:
+
+- The README should describe implemented review-run and plugin surfaces, not the
+  initial bootstrap intent.
+- User-facing docs need to preserve the Goal A boundary: review-run migration is
+  real, while large-scale graph sessions remain follow-up work.
+- The acceptance path should name both standalone `gaia-research review` and
+  plugin-backed `gaia research review`.
+
+Verifier:
+
+- docs-only diff review
