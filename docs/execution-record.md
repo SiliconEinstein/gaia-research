@@ -187,3 +187,25 @@ Learning:
 Verifier:
 
 - docs-only diff review
+
+### PR #9: Review-Run Status CLI
+
+Branch: `feature/review-run-status`
+
+Learning:
+
+- Writing `.gaia/research/runs/**` is not enough for agent/product acceptance;
+  callers need a simple way to inspect a run envelope after execution or failure.
+- `read_review_run` already provided the SDK surface, so this PR only exposes it
+  through standalone and plugin CLI status paths.
+
+Verifier:
+
+- `uv run pytest tests/test_cli_review.py tests/test_cli_plugin.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- created a temporary Mendel Gaia package, ran `gaia-research review`, then
+  verified `gaia-research status --run-id status-smoke` prints completed/report
+  and event count
+- `uv build --wheel --out-dir dist`
