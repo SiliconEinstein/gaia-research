@@ -133,3 +133,18 @@ Verifier:
 - `uv run python -c 'import typer; from gaia.cli.main import load_cli_plugins; ...'`
   returned `['research']` and registered the `research` group on a fresh root app
 - `uv build --wheel --out-dir dist`
+
+### PR #6: CI Wheel Build Gate
+
+Branch: `feature/ci-build-wheel`
+
+Learning:
+
+- The plugin entry point is packaging metadata, so CI should build the wheel
+  instead of relying only on editable-install tests.
+- Keeping the wheel build in the downstream repo CI makes the one-way dependency
+  contract visible at the package boundary.
+
+Verifier:
+
+- `uv build --wheel --out-dir dist`
