@@ -40,3 +40,21 @@ if len(matches) != 1:
 if matches[0].value != "gaia_research.plugin:register":
     raise SystemExit(f"unexpected research plugin target: {matches[0].value}")
 PY
+
+set +e
+"${tmp_dir}/venv/bin/python" - <<'PY'
+from gaia.cli import main
+
+if not hasattr(main, "_remove_registered_top_level_name"):
+    raise SystemExit(42)
+PY
+gaia_plugin_loader_status="$?"
+set -e
+
+if [[ "${gaia_plugin_loader_status}" -eq 0 ]]; then
+  "${tmp_dir}/venv/bin/gaia" research doctor
+elif [[ "${gaia_plugin_loader_status}" -eq 42 ]]; then
+  echo "skipping gaia research doctor: installed Gaia core lacks research plugin handoff"
+else
+  exit "${gaia_plugin_loader_status}"
+fi

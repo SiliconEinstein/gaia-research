@@ -274,11 +274,18 @@ Learning:
   locally reproducible.
 - The script should avoid `mapfile` so local macOS bash and GitHub Actions bash
   both run the same verifier.
+- While Gaia core #772 is still unmerged, the smoke explicitly skips the
+  `gaia research doctor` command when the installed Gaia core lacks the
+  research plugin handoff helper. Once Gaia main has that handoff, the same CI
+  gate must run `gaia research doctor` successfully, proving the installed
+  wheel reconnects through Gaia's CLI entry point.
 
 Verifier:
 
 - `uv build --wheel --out-dir dist`
-- `scripts/smoke_installed_wheel.sh`
+- `scripts/smoke_installed_wheel.sh` against current Gaia main, with explicit
+  `gaia research doctor` skip because research plugin handoff is not yet
+  installed
 - `bash -n scripts/smoke_installed_wheel.sh`
 - `uv run pytest -q`
 - `uv run ruff check src tests`
