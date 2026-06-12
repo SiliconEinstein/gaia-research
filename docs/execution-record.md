@@ -25,11 +25,11 @@ provisional until the relevant stacks are merged.
 | Goal A requirement | Current evidence | Remaining merge dependency |
 | --- | --- | --- |
 | `gaia-research` exists as a standalone repo | Repo `SiliconEinstein/gaia-research`, package metadata, wheel build, installed-wheel smoke | Merge gaia-research PR stack |
-| Gaia core provides public API surfaces | Gaia PR #770 declares inquiry review state/API; gaia-research PR #7 verifies exact callables `run_review` and `render_markdown` | Merge Gaia #770 and gaia-research #7+ |
-| `gaia research` reconnects through plugin/entry point | Gaia PR #769 loads `gaia.cli_plugins`; Gaia PR #772 hands off legacy `research`; gaia-research PR #5 exposes plugin command; PR #12 smoke can run `gaia research doctor` / `gaia research review --json` against Gaia #772 via `GAIA_CORE_SPEC` | Merge Gaia #769 then #772; merge gaia-research #5/#12 |
+| Gaia core provides public API surfaces | Gaia PR #770 declares inquiry review state/API; gaia-research PR #7 verifies exact callables `run_review` and `render_markdown` | Gaia #770 merged; merge gaia-research PR stack |
+| `gaia research` reconnects through plugin/entry point | Gaia PR #769 loads `gaia.cli_plugins`; Gaia PR #772 hands off legacy `research`; gaia-research PR #5 exposes plugin command; strict PR #17 smoke runs `gaia research doctor` and `gaia research review --json` against Gaia `main` | Gaia #769/#772 merged; merge gaia-research PR stack |
 | CI proves `gaia-research -> Gaia core` one-way dependency | gaia-research PR #7 callable contract, PR #12 installed-wheel smoke, PR #13 source-boundary test | Merge gaia-research #7/#12/#13 |
-| Current review-run migrates with parity | gaia-research PR #2 disk contract, #3 runner bridge, #4 standalone CLI, #5 plugin command, #9 status, #10/#11 JSON, #12 Gaia CLI review smoke | Merge gaia-research #2-#12 and Gaia #772 |
-| `.gaia/research/**` ownership is clear | Gaia PR #771 namespace declaration; gaia-research PR #2/#3 tests write `.gaia/research/runs/**` and assert no `.gaia/research_loop` | Merge Gaia #771 and gaia-research #2+ |
+| Current review-run migrates with parity | gaia-research PR #2 disk contract, #3 runner bridge, #4 standalone CLI, #5 plugin command, #9 status, #10/#11 JSON, #12 Gaia CLI review smoke, PR #17 strict cross-repo review smoke against Gaia `main` | Gaia #772 merged; merge gaia-research PR stack |
+| `.gaia/research/**` ownership is clear | Gaia PR #771 namespace declaration; gaia-research PR #2/#3 tests write `.gaia/research/runs/**` and assert no `.gaia/research_loop` | Gaia #771 merged; merge gaia-research PR stack |
 | No large-scale graph support is claimed | README and this execution record state graph sessions are follow-up, not implemented | Preserve wording while merging |
 
 ## Final Merge And Completion Audit
@@ -39,12 +39,12 @@ branches.
 
 Merge sequencing:
 
-1. Merge Gaia PR #769 (`gaia.cli_plugins` loader).
-2. Merge Gaia PR #770 (research/inquiry public state/API).
-3. Merge Gaia PR #771 (`.gaia/research/**` namespace ownership).
-4. Rebase or retarget Gaia PR #772 onto Gaia `main`, then merge the
-   `gaia research` handoff.
-5. Merge the gaia-research stack in order, preserving each PR's execution
+1. Gaia PR #769 (`gaia.cli_plugins` loader) merged.
+2. Gaia PR #770 (research/inquiry public state/API) merged.
+3. Gaia PR #771 (`.gaia/research/**` namespace ownership) merged.
+4. Gaia PR #772 (`gaia research` plugin handoff) merged after retargeting to
+   `main`.
+5. Merge the gaia-research stack, preserving each PR's execution
    record updates.
 
 Final Gaia core audit:
@@ -178,6 +178,14 @@ Verifier:
 
 - `uv run pytest tests/test_installed_wheel_smoke.py -q`
 - `scripts/audit_goal_a.sh`
+- `GAIA_REQUIRE_RESEARCH_HANDOFF=1 scripts/audit_goal_a.sh`
+  - installed Gaia `main` at `a59eb0be`
+  - verified `gaia-research doctor OK`
+  - did not print the handoff skip message
+- `GAIA_REQUIRE_RESEARCH_HANDOFF=1 GAIA_REVIEW_PACKAGE=<tmp-copy-of-mendel-v0-5-gaia> scripts/audit_goal_a.sh`
+  - installed Gaia `main` at `a59eb0be`
+  - returned `status=completed`, `phase=report`, and `events=6`
+  - wrote under `.gaia/research/runs/gaia-cli-review-smoke/`
 
 ### PR #2: Review-Run Disk Contract
 
