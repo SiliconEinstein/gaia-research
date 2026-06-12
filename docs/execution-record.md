@@ -100,7 +100,37 @@ Verifier:
 - `uv run pytest -q`
 - `uv run ruff check src tests`
 - `uv run mypy src tests`
-- wheel metadata contains `gaia.cli_plugins`.
+
+### PR #14: Gaia Core Callable Signature Contract
+
+Branch: `feature/core-api-signature-contract`
+
+Learning:
+
+- Verifying that Gaia core review APIs are callable is too weak for the
+  split boundary; `gaia-research` also depends on the parameter shape.
+- The review-run bridge currently requires `run_review(path, *,
+  focus_override, mode, no_infer, depth, since, strict)` and
+  `render_markdown(report)`.
+- Encoding these signatures in downstream CI makes Gaia core API drift visible
+  before review-run parity breaks at runtime.
+
+Verifier:
+
+- `uv run pytest tests/test_core_contract.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run ruff format --check src/gaia_research/contracts.py
+  src/gaia_research/__init__.py tests/test_core_contract.py`
+- `uv run mypy src tests`
+- `git diff --check`
+- `uv build --wheel --out-dir dist`
+- `scripts/smoke_installed_wheel.sh`
+  - built and installed `gaia_research-0.1.0-py3-none-any.whl`
+  - verified `gaia-research bootstrap OK`
+  - skipped `gaia research doctor` because installed Gaia `main` still lacks
+    the research plugin handoff; this should stop skipping after Gaia #772 is
+    merged.
 
 ### PR #2: Review-Run Disk Contract
 

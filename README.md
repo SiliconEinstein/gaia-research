@@ -133,6 +133,7 @@ The test suite verifies:
 - runtime Gaia package dependency metadata names only `gaia-lang`;
 - gaia-research source does not statically import Gaia core modules; the bridge
   stays behind declared dynamic public surfaces;
-- the exact Gaia core review callables used by the bridge are callable;
+- the exact Gaia core review callables used by the bridge are callable and keep
+  the expected parameter shape;
 - the CLI plugin entry point is present in package metadata;
 - review-run artifacts are written under `.gaia/research/runs/**`.
