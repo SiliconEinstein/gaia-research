@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ _DEPTH_OPTION = typer.Option(0, "--depth", help="Dependency depth for review.")
 _SINCE_OPTION = typer.Option(None, "--since", help="Baseline review id.")
 _STRICT_OPTION = typer.Option(False, "--strict", help="Enable strict review mode.")
 _STATUS_RUN_ID_OPTION = typer.Option(None, "--run-id", help="Review run id.")
+_JSON_OPTION = typer.Option(False, "--json", help="Emit machine-readable JSON.")
 
 
 @research_app.command(name="doctor")
@@ -44,6 +46,7 @@ def doctor_command() -> None:
 def status_command(
     path: Path = _PATH_ARGUMENT,
     run_id: str | None = _STATUS_RUN_ID_OPTION,
+    json_out: bool = _JSON_OPTION,
 ) -> None:
     """Report bootstrap status for the package-local research namespace."""
     if run_id is not None:
@@ -52,7 +55,10 @@ def status_command(
         except (FileNotFoundError, ReviewRunError) as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1) from exc
-        _echo_review_run_status(snapshot)
+        if json_out:
+            typer.echo(json.dumps(_review_run_status_payload(snapshot), indent=2))
+        else:
+            _echo_review_run_status(snapshot)
         return
 
     research_dir = path / ".gaia" / "research"
@@ -61,15 +67,27 @@ def status_command(
 
 
 def _echo_review_run_status(snapshot: Any) -> None:
+    payload = _review_run_status_payload(snapshot)
+    typer.echo(f"review run: {payload['run_id']}")
+    typer.echo(f"status: {payload['status']}")
+    typer.echo(f"phase: {payload['phase']}")
+    typer.echo(f"run_dir: {payload['run_dir']}")
+    typer.echo(f"report: {payload['report']}")
+    typer.echo(f"events: {payload['events']}")
+
+
+def _review_run_status_payload(snapshot: Any) -> dict[str, object]:
     handle = snapshot.handle
     state = snapshot.state
     events = snapshot.events
-    typer.echo(f"review run: {handle.run_id}")
-    typer.echo(f"status: {state.get('status', '(unknown)')}")
-    typer.echo(f"phase: {state.get('phase', '(unknown)')}")
-    typer.echo(f"run_dir: {handle.run_dir}")
-    typer.echo(f"report: {handle.report_path}")
-    typer.echo(f"events: {len(events)}")
+    return {
+        "run_id": handle.run_id,
+        "status": state.get("status", "(unknown)"),
+        "phase": state.get("phase", "(unknown)"),
+        "run_dir": str(handle.run_dir),
+        "report": str(handle.report_path),
+        "events": len(events),
+    }
 
 
 @research_app.command(name="review")
