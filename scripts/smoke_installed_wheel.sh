@@ -66,6 +66,10 @@ if [[ "${gaia_plugin_loader_status}" -eq 0 ]]; then
       --json
   fi
 elif [[ "${gaia_plugin_loader_status}" -eq 42 ]]; then
+  if [[ "${GAIA_REQUIRE_RESEARCH_HANDOFF:-}" == "1" ]]; then
+    echo "installed Gaia core lacks research plugin handoff" >&2
+    exit 42
+  fi
   echo "skipping gaia research doctor: installed Gaia core lacks research plugin handoff"
 else
   exit "${gaia_plugin_loader_status}"

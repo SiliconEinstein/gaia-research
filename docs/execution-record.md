@@ -64,7 +64,7 @@ scripts/audit_goal_a.sh
 Final cross-repo review-run smoke:
 
 ```bash
-GAIA_REVIEW_PACKAGE=<tmp-copy-of-mendel-v0-5-gaia> scripts/audit_goal_a.sh
+GAIA_REQUIRE_RESEARCH_HANDOFF=1 GAIA_REVIEW_PACKAGE=<tmp-copy-of-mendel-v0-5-gaia> scripts/audit_goal_a.sh
 ```
 
 Expected completion evidence:
@@ -160,6 +160,23 @@ Learning:
 
 Verifier:
 
+- `scripts/audit_goal_a.sh`
+
+### PR #17: Strict Research Handoff Smoke
+
+Branch: `feature/strict-handoff-smoke`
+
+Learning:
+
+- Daily downstream CI can keep skipping `gaia research doctor` while Gaia `main`
+  lacks the plugin handoff, but final Goal A acceptance needs a hard-fail mode.
+- `GAIA_REQUIRE_RESEARCH_HANDOFF=1` converts the current skip path into exit
+  code 42, making missing Gaia #772 behavior impossible to mistake for a
+  completed split.
+
+Verifier:
+
+- `uv run pytest tests/test_installed_wheel_smoke.py -q`
 - `scripts/audit_goal_a.sh`
 
 ### PR #2: Review-Run Disk Contract
