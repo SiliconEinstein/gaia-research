@@ -209,3 +209,25 @@ Verifier:
   verified `gaia-research status --run-id status-smoke` prints completed/report
   and event count
 - `uv build --wheel --out-dir dist`
+
+### PR #10: Review-Run Status JSON Output
+
+Branch: `feature/review-status-json`
+
+Learning:
+
+- Human-readable status is useful for manual acceptance, but agents need stable
+  JSON for automated checks.
+- The JSON shape should be a compact summary of the existing run envelope, not a
+  second schema: run id, status, phase, run directory, report path, and event
+  count.
+
+Verifier:
+
+- `uv run pytest tests/test_cli_review.py tests/test_cli_plugin.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- created a temporary Mendel Gaia package, ran `gaia-research review`, then
+  parsed `gaia-research status --json`
+- `uv build --wheel --out-dir dist`

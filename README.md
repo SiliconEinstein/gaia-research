@@ -78,6 +78,8 @@ uv run gaia-research status \
   --run-id aspirin-review
 ```
 
+Add `--json` for machine-readable status output.
+
 ## Review-Run Artifacts
 
 Each run writes an observable envelope under the package being reviewed:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from typing import Any
@@ -37,6 +38,7 @@ def _build_parser() -> argparse.ArgumentParser:
     status = subparsers.add_parser("status", help="Inspect a package-local review run")
     status.add_argument("--path", default=".", help="Gaia package path.")
     status.add_argument("--run-id", required=True, help="Review run id.")
+    status.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     return parser
 
 
@@ -66,15 +68,27 @@ def _run_review_command(args: argparse.Namespace) -> int:
 
 
 def _print_review_run_status(snapshot: Any) -> None:
+    payload = _review_run_status_payload(snapshot)
+    print(f"review run: {payload['run_id']}")
+    print(f"status: {payload['status']}")
+    print(f"phase: {payload['phase']}")
+    print(f"run_dir: {payload['run_dir']}")
+    print(f"report: {payload['report']}")
+    print(f"events: {payload['events']}")
+
+
+def _review_run_status_payload(snapshot: Any) -> dict[str, object]:
     handle = snapshot.handle
     state = snapshot.state
     events = snapshot.events
-    print(f"review run: {handle.run_id}")
-    print(f"status: {state.get('status', '(unknown)')}")
-    print(f"phase: {state.get('phase', '(unknown)')}")
-    print(f"run_dir: {handle.run_dir}")
-    print(f"report: {handle.report_path}")
-    print(f"events: {len(events)}")
+    return {
+        "run_id": handle.run_id,
+        "status": state.get("status", "(unknown)"),
+        "phase": state.get("phase", "(unknown)"),
+        "run_dir": str(handle.run_dir),
+        "report": str(handle.report_path),
+        "events": len(events),
+    }
 
 
 def _run_status_command(args: argparse.Namespace) -> int:
@@ -83,7 +97,10 @@ def _run_status_command(args: argparse.Namespace) -> int:
     except (FileNotFoundError, ReviewRunError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    _print_review_run_status(snapshot)
+    if args.json:
+        print(json.dumps(_review_run_status_payload(snapshot), indent=2))
+    else:
+        _print_review_run_status(snapshot)
     return 0
 
 
