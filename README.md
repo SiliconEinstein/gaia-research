@@ -70,6 +70,10 @@ gaia research review \
 The Gaia command requires a Gaia core version that loads `gaia.cli_plugins` and
 hands off the legacy `research` group to the installed `gaia-research` plugin.
 
+Add `--json` to either review command when an agent or product caller needs the
+completed run id, status, phase, run directory, report path, and event count
+without parsing human-readable text.
+
 Inspect a completed or failed run:
 
 ```bash

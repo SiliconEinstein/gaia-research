@@ -103,6 +103,7 @@ def review_command(
     depth: int = _DEPTH_OPTION,
     since: str | None = _SINCE_OPTION,
     strict: bool = _STRICT_OPTION,
+    json_out: bool = _JSON_OPTION,
 ) -> None:
     """Run Gaia inquiry review into the external research run envelope."""
     try:
@@ -123,9 +124,16 @@ def review_command(
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    typer.echo(f"review run completed: {result.handle.run_id}")
-    typer.echo(f"run_dir: {result.handle.run_dir}")
-    typer.echo(f"report: {result.handle.report_path}")
+    if json_out:
+        typer.echo(json.dumps(_review_result_payload(result), indent=2))
+    else:
+        typer.echo(f"review run completed: {result.handle.run_id}")
+        typer.echo(f"run_dir: {result.handle.run_dir}")
+        typer.echo(f"report: {result.handle.report_path}")
+
+
+def _review_result_payload(result: Any) -> dict[str, object]:
+    return _review_run_status_payload(result.snapshot)
 
 
 def register(root_app: typer.Typer) -> None:

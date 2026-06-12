@@ -76,6 +76,54 @@ def test_review_command_runs_package_review_and_prints_artifacts(
     assert "final_report.md" in out
 
 
+def test_review_command_can_emit_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pkg = tmp_path / "demo-gaia"
+    pkg.mkdir()
+
+    def fake_run_package_review(path: str | Path, **kwargs: Any) -> Any:
+        handle = SimpleNamespace(
+            run_id="json-run",
+            run_dir=pkg / ".gaia" / "research" / "runs" / "json-run",
+            report_path=pkg / ".gaia" / "research" / "runs" / "json-run" / "final_report.md",
+        )
+        snapshot = SimpleNamespace(
+            handle=handle,
+            state={"status": "completed", "phase": "report"},
+            events=[{"type": "run.created"}, {"type": "run.completed"}],
+        )
+        return SimpleNamespace(handle=handle, snapshot=snapshot)
+
+    monkeypatch.setattr(cli, "run_package_review", fake_run_package_review)
+
+    exit_code = cli.main(
+        [
+            "review",
+            "--path",
+            str(pkg),
+            "--topic",
+            "dqcp",
+            "--run-id",
+            "json-run",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "run_id": "json-run",
+        "status": "completed",
+        "phase": "report",
+        "run_dir": str(pkg / ".gaia" / "research" / "runs" / "json-run"),
+        "report": str(pkg / ".gaia" / "research" / "runs" / "json-run" / "final_report.md"),
+        "events": 2,
+    }
+
+
 def test_review_command_returns_nonzero_when_runner_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

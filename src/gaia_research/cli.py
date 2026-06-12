@@ -34,6 +34,7 @@ def _build_parser() -> argparse.ArgumentParser:
     review.add_argument("--depth", type=int, default=0, help="Dependency depth for review.")
     review.add_argument("--since", default=None, help="Baseline review id for semantic diff.")
     review.add_argument("--strict", action="store_true", help="Enable strict review mode.")
+    review.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
     status = subparsers.add_parser("status", help="Inspect a package-local review run")
     status.add_argument("--path", default=".", help="Gaia package path.")
@@ -61,9 +62,12 @@ def _run_review_command(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"review run completed: {result.handle.run_id}")
-    print(f"run_dir: {result.handle.run_dir}")
-    print(f"report: {result.handle.report_path}")
+    if args.json:
+        print(json.dumps(_review_result_payload(result), indent=2))
+    else:
+        print(f"review run completed: {result.handle.run_id}")
+        print(f"run_dir: {result.handle.run_dir}")
+        print(f"report: {result.handle.report_path}")
     return 0
 
 
@@ -89,6 +93,10 @@ def _review_run_status_payload(snapshot: Any) -> dict[str, object]:
         "report": str(handle.report_path),
         "events": len(events),
     }
+
+
+def _review_result_payload(result: Any) -> dict[str, object]:
+    return _review_run_status_payload(result.snapshot)
 
 
 def _run_status_command(args: argparse.Namespace) -> int:
