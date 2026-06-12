@@ -374,8 +374,10 @@ Branch: `feature/source-boundary-contract`
 
 Learning:
 
-- The one-way dependency contract should be visible in source shape, not only in
-  package metadata or runtime smoke tests.
+- The one-way dependency contract should be visible in both package metadata
+  and source shape, not only in runtime smoke tests.
+- Runtime package metadata should name Gaia only as `gaia-lang`; adding other
+  Gaia package dependencies should fail CI.
 - `gaia-research` should keep Gaia core access behind declared dynamic bridge
   points (`contracts.py` and `runner.py`) instead of static `import gaia`
   statements spread across the package.
