@@ -282,6 +282,9 @@ Learning:
 - `GAIA_CORE_SPEC` lets the same smoke verifier reinstall a Gaia core branch or
   local artifact into the temporary venv, so the stacked #772 handoff can be
   tested before Gaia main catches up.
+- `GAIA_REVIEW_PACKAGE` extends the same installed-wheel smoke from plugin
+  discovery to review-run parity by running `gaia research review --json
+  --no-infer` through the installed Gaia CLI plugin.
 
 Verifier:
 
@@ -291,6 +294,10 @@ Verifier:
   `gaia research doctor` skip because research plugin handoff is not yet
   installed
 - `GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff" scripts/smoke_installed_wheel.sh`
+- copied `examples/mendel-v0-5-gaia` to a temporary package and ran
+  `GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff"
+  GAIA_REVIEW_PACKAGE=<tmp-mendel-package> scripts/smoke_installed_wheel.sh`,
+  producing `completed/report` JSON through `gaia research review`
 - `bash -n scripts/smoke_installed_wheel.sh`
 - `uv run pytest -q`
 - `uv run ruff check src tests`

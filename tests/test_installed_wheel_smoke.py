@@ -41,8 +41,13 @@ SH
   chmod +x "${{venv}}/bin/gaia-research"
   cat > "${{venv}}/bin/gaia" <<'SH'
 #!/usr/bin/env bash
+printf 'gaia %s\n' "$*" >> "${{GAIA_SMOKE_COMMAND_LOG}}"
 if [[ "$*" == "research doctor" ]]; then
   echo "gaia-research doctor OK"
+  exit 0
+fi
+if [[ "$*" == *"research review"* ]]; then
+  echo '{{"run_id": "smoke-review", "status": "completed"}}'
   exit 0
 fi
 exit 7
@@ -57,9 +62,11 @@ fi
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["TMPDIR"] = str(tmp_path)
+    env["GAIA_SMOKE_COMMAND_LOG"] = str(command_log)
     env["GAIA_CORE_SPEC"] = (
         "gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff"
     )
+    env["GAIA_REVIEW_PACKAGE"] = str(tmp_path / "demo-gaia")
 
     result = subprocess.run(
         [str(repo / "scripts" / "smoke_installed_wheel.sh"), str(dist)],
@@ -75,3 +82,6 @@ fi
     assert "uv pip install --python" in command_log.read_text(encoding="utf-8")
     assert "--reinstall" in command_log.read_text(encoding="utf-8")
     assert env["GAIA_CORE_SPEC"] in command_log.read_text(encoding="utf-8")
+    assert "gaia research review" in command_log.read_text(encoding="utf-8")
+    assert f"--path {env['GAIA_REVIEW_PACKAGE']}" in command_log.read_text(encoding="utf-8")
+    assert "--json" in command_log.read_text(encoding="utf-8")

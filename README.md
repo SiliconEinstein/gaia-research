@@ -123,6 +123,9 @@ GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@code
   scripts/smoke_installed_wheel.sh
 ```
 
+Add `GAIA_REVIEW_PACKAGE=/path/to/example-gaia` to the same command to run
+`gaia research review --json --no-infer` through the installed Gaia CLI plugin.
+
 The test suite verifies:
 
 - `gaia-research` can import declared Gaia core public modules;
