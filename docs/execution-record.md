@@ -257,3 +257,48 @@ Verifier:
 - copied `examples/mendel-v0-5-gaia` to a temporary package and ran
   `gaia-research review --json`, producing completed/report JSON with
   `events=6`
+
+### PR #12: Installed Wheel Smoke Gate
+
+Branch: `feature/ci-installed-wheel-smoke`
+
+Learning:
+
+- Building the wheel is necessary but not sufficient for the split boundary;
+  CI should install the built artifact into a clean environment and run the
+  packaged console script.
+- The installed-wheel smoke should also verify the packaged
+  `gaia.cli_plugins` entry point, because `gaia research` reconnects through
+  distribution metadata.
+- Keeping the smoke in `scripts/smoke_installed_wheel.sh` makes the CI gate
+  locally reproducible.
+- The script should avoid `mapfile` so local macOS bash and GitHub Actions bash
+  both run the same verifier.
+- While Gaia core #772 is still unmerged, the smoke explicitly skips the
+  `gaia research doctor` command when the installed Gaia core lacks the
+  research plugin handoff helper. Once Gaia main has that handoff, the same CI
+  gate must run `gaia research doctor` successfully, proving the installed
+  wheel reconnects through Gaia's CLI entry point.
+- `GAIA_CORE_SPEC` lets the same smoke verifier reinstall a Gaia core branch or
+  local artifact into the temporary venv, so the stacked #772 handoff can be
+  tested before Gaia main catches up.
+- `GAIA_REVIEW_PACKAGE` extends the same installed-wheel smoke from plugin
+  discovery to review-run parity by running `gaia research review --json
+  --no-infer` through the installed Gaia CLI plugin.
+
+Verifier:
+
+- `uv run pytest tests/test_installed_wheel_smoke.py -q`
+- `uv build --wheel --out-dir dist`
+- `scripts/smoke_installed_wheel.sh` against current Gaia main, with explicit
+  `gaia research doctor` skip because research plugin handoff is not yet
+  installed
+- `GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff" scripts/smoke_installed_wheel.sh`
+- copied `examples/mendel-v0-5-gaia` to a temporary package and ran
+  `GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff"
+  GAIA_REVIEW_PACKAGE=<tmp-mendel-package> scripts/smoke_installed_wheel.sh`,
+  producing `completed/report` JSON through `gaia research review`
+- `bash -n scripts/smoke_installed_wheel.sh`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`

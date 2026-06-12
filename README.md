@@ -112,7 +112,19 @@ uv run pytest -q
 uv run ruff check src tests
 uv run mypy src tests
 uv build --wheel --out-dir dist
+scripts/smoke_installed_wheel.sh
 ```
+
+To smoke-test a Gaia core branch before it reaches Gaia main, override the core
+dependency used by the installed-wheel verifier:
+
+```bash
+GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff" \
+  scripts/smoke_installed_wheel.sh
+```
+
+Add `GAIA_REVIEW_PACKAGE=/path/to/example-gaia` to the same command to run
+`gaia research review --json --no-infer` through the installed Gaia CLI plugin.
 
 The test suite verifies:
 
