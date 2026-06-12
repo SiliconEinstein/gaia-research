@@ -102,3 +102,39 @@ def test_review_command_returns_nonzero_when_runner_fails(
 
     assert exit_code == 1
     assert "Error: compile exploded" in capsys.readouterr().err
+
+
+def test_status_command_reads_review_run_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pkg = tmp_path / "demo-gaia"
+    pkg.mkdir()
+    calls: dict[str, Any] = {}
+
+    def fake_read_review_run(path: str | Path, run_id: str) -> Any:
+        calls["path"] = Path(path)
+        calls["run_id"] = run_id
+        handle = SimpleNamespace(
+            run_id=run_id,
+            run_dir=pkg / ".gaia" / "research" / "runs" / run_id,
+            report_path=pkg / ".gaia" / "research" / "runs" / run_id / "final_report.md",
+        )
+        return SimpleNamespace(
+            handle=handle,
+            state={"status": "completed", "phase": "report"},
+            events=[{"type": "run.created"}, {"type": "run.completed"}],
+        )
+
+    monkeypatch.setattr(cli, "read_review_run", fake_read_review_run)
+
+    exit_code = cli.main(["status", "--path", str(pkg), "--run-id", "demo-run"])
+
+    assert exit_code == 0
+    assert calls == {"path": pkg, "run_id": "demo-run"}
+    out = capsys.readouterr().out
+    assert "review run: demo-run" in out
+    assert "status: completed" in out
+    assert "phase: report" in out
+    assert "events: 2" in out

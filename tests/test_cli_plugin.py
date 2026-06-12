@@ -84,3 +84,44 @@ def test_plugin_review_command_calls_review_runner(
     }
     assert "review run completed: plugin-run" in result.stdout
     assert "final_report.md" in result.stdout
+
+
+def test_plugin_status_command_reads_review_run_state(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    from gaia_research import plugin
+
+    pkg = tmp_path / "demo-gaia"
+    pkg.mkdir()
+    calls: dict[str, Any] = {}
+
+    def fake_read_review_run(path: str | Path, run_id: str) -> Any:
+        calls["path"] = Path(path)
+        calls["run_id"] = run_id
+        handle = SimpleNamespace(
+            run_id=run_id,
+            run_dir=pkg / ".gaia" / "research" / "runs" / run_id,
+            report_path=pkg / ".gaia" / "research" / "runs" / run_id / "final_report.md",
+        )
+        return SimpleNamespace(
+            handle=handle,
+            state={"status": "failed", "phase": "core_review"},
+            events=[{"type": "run.created"}, {"type": "core_review.failed"}],
+        )
+
+    monkeypatch.setattr(plugin, "read_review_run", fake_read_review_run)
+
+    root_app = typer.Typer(name="gaia")
+    plugin.register(root_app)
+    result = CliRunner().invoke(
+        root_app,
+        ["research", "status", str(pkg), "--run-id", "failed-run"],
+    )
+
+    assert result.exit_code == 0
+    assert calls == {"path": pkg, "run_id": "failed-run"}
+    assert "review run: failed-run" in result.stdout
+    assert "status: failed" in result.stdout
+    assert "phase: core_review" in result.stdout
+    assert "events: 2" in result.stdout

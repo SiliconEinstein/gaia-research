@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from typing import Any
 
 from gaia_research.contracts import verify_core_contract
+from gaia_research.review import ReviewRunError, read_review_run
 from gaia_research.runner import ReviewRunnerError, run_package_review
 
 
@@ -31,6 +33,10 @@ def _build_parser() -> argparse.ArgumentParser:
     review.add_argument("--depth", type=int, default=0, help="Dependency depth for review.")
     review.add_argument("--since", default=None, help="Baseline review id for semantic diff.")
     review.add_argument("--strict", action="store_true", help="Enable strict review mode.")
+
+    status = subparsers.add_parser("status", help="Inspect a package-local review run")
+    status.add_argument("--path", default=".", help="Gaia package path.")
+    status.add_argument("--run-id", required=True, help="Review run id.")
     return parser
 
 
@@ -59,6 +65,28 @@ def _run_review_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_review_run_status(snapshot: Any) -> None:
+    handle = snapshot.handle
+    state = snapshot.state
+    events = snapshot.events
+    print(f"review run: {handle.run_id}")
+    print(f"status: {state.get('status', '(unknown)')}")
+    print(f"phase: {state.get('phase', '(unknown)')}")
+    print(f"run_dir: {handle.run_dir}")
+    print(f"report: {handle.report_path}")
+    print(f"events: {len(events)}")
+
+
+def _run_status_command(args: argparse.Namespace) -> int:
+    try:
+        snapshot = read_review_run(args.path, args.run_id)
+    except (FileNotFoundError, ReviewRunError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    _print_review_run_status(snapshot)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the gaia-research CLI."""
     args_list = list(argv) if argv is not None else sys.argv[1:]
@@ -71,6 +99,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(args_list)
     if args.command == "review":
         return _run_review_command(args)
+    if args.command == "status":
+        return _run_status_command(args)
 
     verify_core_contract()
     print("gaia-research bootstrap OK")

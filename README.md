@@ -70,6 +70,14 @@ gaia research review \
 The Gaia command requires a Gaia core version that loads `gaia.cli_plugins` and
 hands off the legacy `research` group to the installed `gaia-research` plugin.
 
+Inspect a completed or failed run:
+
+```bash
+uv run gaia-research status \
+  --path /path/to/example-gaia \
+  --run-id aspirin-review
+```
+
 ## Review-Run Artifacts
 
 Each run writes an observable envelope under the package being reviewed:
