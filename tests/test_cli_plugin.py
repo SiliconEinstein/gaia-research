@@ -87,6 +87,59 @@ def test_plugin_review_command_calls_review_runner(
     assert "final_report.md" in result.stdout
 
 
+def test_plugin_review_command_can_emit_json(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    from gaia_research import plugin
+
+    pkg = tmp_path / "demo-gaia"
+    pkg.mkdir()
+
+    def fake_run_package_review(path: str | Path, **kwargs: Any) -> Any:
+        handle = SimpleNamespace(
+            run_id="plugin-json-run",
+            run_dir=pkg / ".gaia" / "research" / "runs" / "plugin-json-run",
+            report_path=pkg / ".gaia" / "research" / "runs" / "plugin-json-run" / "final_report.md",
+        )
+        snapshot = SimpleNamespace(
+            handle=handle,
+            state={"status": "completed", "phase": "report"},
+            events=[{"type": "run.created"}, {"type": "run.completed"}],
+        )
+        return SimpleNamespace(handle=handle, snapshot=snapshot)
+
+    monkeypatch.setattr(plugin, "run_package_review", fake_run_package_review)
+
+    root_app = typer.Typer(name="gaia")
+    plugin.register(root_app)
+    result = CliRunner().invoke(
+        root_app,
+        [
+            "research",
+            "review",
+            "--path",
+            str(pkg),
+            "--topic",
+            "dqcp",
+            "--run-id",
+            "plugin-json-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "run_id": "plugin-json-run",
+        "status": "completed",
+        "phase": "report",
+        "run_dir": str(pkg / ".gaia" / "research" / "runs" / "plugin-json-run"),
+        "report": str(pkg / ".gaia" / "research" / "runs" / "plugin-json-run" / "final_report.md"),
+        "events": 2,
+    }
+
+
 def test_plugin_status_command_reads_review_run_state(
     tmp_path: Path,
     monkeypatch: Any,

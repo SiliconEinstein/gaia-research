@@ -231,3 +231,29 @@ Verifier:
 - created a temporary Mendel Gaia package, ran `gaia-research review`, then
   parsed `gaia-research status --json`
 - `uv build --wheel --out-dir dist`
+
+### PR #11: Review Command JSON Output
+
+Branch: `feature/review-output-json`
+
+Learning:
+
+- Agents should be able to launch a review and immediately capture the run
+  handle without a second status call or text scraping.
+- `review --json` should reuse the same compact envelope summary as
+  `status --json`: run id, status, phase, run directory, report path, and event
+  count.
+- The human-readable review output remains the default for manual acceptance.
+
+Verifier:
+
+- `uv run pytest tests/test_cli_review.py::test_review_command_can_emit_json
+  tests/test_cli_plugin.py::test_plugin_review_command_can_emit_json -q`
+- `uv run pytest tests/test_cli_review.py tests/test_cli_plugin.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv build --wheel --out-dir dist`
+- copied `examples/mendel-v0-5-gaia` to a temporary package and ran
+  `gaia-research review --json`, producing completed/report JSON with
+  `events=6`
