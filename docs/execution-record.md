@@ -302,3 +302,26 @@ Verifier:
 - `uv run pytest -q`
 - `uv run ruff check src tests`
 - `uv run mypy src tests`
+
+### PR #13: Source Boundary Contract
+
+Branch: `feature/source-boundary-contract`
+
+Learning:
+
+- The one-way dependency contract should be visible in source shape, not only in
+  package metadata or runtime smoke tests.
+- `gaia-research` should keep Gaia core access behind declared dynamic bridge
+  points (`contracts.py` and `runner.py`) instead of static `import gaia`
+  statements spread across the package.
+- This keeps the downstream package honest about depending on public surfaces
+  and makes accidental coupling to Gaia internals fail in CI.
+
+Verifier:
+
+- `uv run pytest tests/test_source_boundary.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv build --wheel --out-dir dist`
+- `scripts/smoke_installed_wheel.sh`

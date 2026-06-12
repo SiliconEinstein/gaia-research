@@ -130,6 +130,8 @@ The test suite verifies:
 
 - `gaia-research` can import declared Gaia core public modules;
 - Gaia core import does not import `gaia_research`;
+- gaia-research source does not statically import Gaia core modules; the bridge
+  stays behind declared dynamic public surfaces;
 - the exact Gaia core review callables used by the bridge are callable;
 - the CLI plugin entry point is present in package metadata;
 - review-run artifacts are written under `.gaia/research/runs/**`.
