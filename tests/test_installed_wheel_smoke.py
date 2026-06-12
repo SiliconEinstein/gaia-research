@@ -85,3 +85,57 @@ fi
     assert "gaia research review" in command_log.read_text(encoding="utf-8")
     assert f"--path {env['GAIA_REVIEW_PACKAGE']}" in command_log.read_text(encoding="utf-8")
     assert "--json" in command_log.read_text(encoding="utf-8")
+
+
+def test_smoke_script_can_require_gaia_research_handoff(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "gaia_research-0.1.0-py3-none-any.whl").write_text("fake wheel\n")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$1" == "venv" ]]; then
+  venv="$2"
+  mkdir -p "${venv}/bin"
+  cat > "${venv}/bin/python" <<'PY'
+#!/usr/bin/env bash
+script="$(cat)"
+if [[ "${script}" == *"_remove_registered_top_level_name"* ]]; then
+  exit 42
+fi
+exit 0
+PY
+  chmod +x "${venv}/bin/python"
+  cat > "${venv}/bin/gaia-research" <<'SH'
+#!/usr/bin/env bash
+echo "gaia-research bootstrap OK"
+SH
+  chmod +x "${venv}/bin/gaia-research"
+fi
+""",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["TMPDIR"] = str(tmp_path)
+    env["GAIA_REQUIRE_RESEARCH_HANDOFF"] = "1"
+
+    result = subprocess.run(
+        [str(repo / "scripts" / "smoke_installed_wheel.sh"), str(dist)],
+        cwd=repo,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 42
+    assert "installed Gaia core lacks research plugin handoff" in result.stderr
