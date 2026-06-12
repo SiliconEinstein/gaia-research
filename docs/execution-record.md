@@ -279,13 +279,18 @@ Learning:
   research plugin handoff helper. Once Gaia main has that handoff, the same CI
   gate must run `gaia research doctor` successfully, proving the installed
   wheel reconnects through Gaia's CLI entry point.
+- `GAIA_CORE_SPEC` lets the same smoke verifier reinstall a Gaia core branch or
+  local artifact into the temporary venv, so the stacked #772 handoff can be
+  tested before Gaia main catches up.
 
 Verifier:
 
+- `uv run pytest tests/test_installed_wheel_smoke.py -q`
 - `uv build --wheel --out-dir dist`
 - `scripts/smoke_installed_wheel.sh` against current Gaia main, with explicit
   `gaia research doctor` skip because research plugin handoff is not yet
   installed
+- `GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff" scripts/smoke_installed_wheel.sh`
 - `bash -n scripts/smoke_installed_wheel.sh`
 - `uv run pytest -q`
 - `uv run ruff check src tests`

@@ -24,6 +24,9 @@ trap 'rm -rf "${tmp_dir}"' EXIT
 
 uv venv "${tmp_dir}/venv" --python "${python_bin}"
 uv pip install --python "${tmp_dir}/venv/bin/python" "${wheels[0]}"
+if [[ -n "${GAIA_CORE_SPEC:-}" ]]; then
+  uv pip install --python "${tmp_dir}/venv/bin/python" --reinstall "${GAIA_CORE_SPEC}"
+fi
 
 "${tmp_dir}/venv/bin/gaia-research"
 "${tmp_dir}/venv/bin/python" - <<'PY'

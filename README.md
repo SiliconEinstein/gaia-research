@@ -115,6 +115,14 @@ uv build --wheel --out-dir dist
 scripts/smoke_installed_wheel.sh
 ```
 
+To smoke-test a Gaia core branch before it reaches Gaia main, override the core
+dependency used by the installed-wheel verifier:
+
+```bash
+GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff" \
+  scripts/smoke_installed_wheel.sh
+```
+
 The test suite verifies:
 
 - `gaia-research` can import declared Gaia core public modules;
