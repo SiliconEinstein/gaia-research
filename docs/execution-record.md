@@ -58,17 +58,13 @@ uv run mypy gaia/cli/main.py tests/cli/test_cli_plugins.py
 Final gaia-research audit:
 
 ```bash
-uv run pytest -q
-uv run ruff check src tests
-uv run mypy src tests
-uv build --wheel --out-dir dist
-scripts/smoke_installed_wheel.sh
+scripts/audit_goal_a.sh
 ```
 
 Final cross-repo review-run smoke:
 
 ```bash
-GAIA_REVIEW_PACKAGE=<tmp-copy-of-mendel-v0-5-gaia> scripts/smoke_installed_wheel.sh
+GAIA_REVIEW_PACKAGE=<tmp-copy-of-mendel-v0-5-gaia> scripts/audit_goal_a.sh
 ```
 
 Expected completion evidence:
@@ -131,6 +127,24 @@ Verifier:
   - skipped `gaia research doctor` because installed Gaia `main` still lacks
     the research plugin handoff; this should stop skipping after Gaia #772 is
     merged.
+
+### PR #15: Goal A Audit Script
+
+Branch: `feature/goal-a-audit-script`
+
+Learning:
+
+- The final Goal A audit should be one repeatable command, not a copied list of
+  commands in this document.
+- The audit script should use a temporary wheel directory so it does not depend
+  on or mutate a developer's local `dist/` state.
+- Keeping `GAIA_CORE_SPEC` and `GAIA_REVIEW_PACKAGE` as smoke-test environment
+  variables preserves the final cross-repo review-run verifier without making
+  every local audit require a sample package.
+
+Verifier:
+
+- `scripts/audit_goal_a.sh`
 
 ### PR #2: Review-Run Disk Contract
 
