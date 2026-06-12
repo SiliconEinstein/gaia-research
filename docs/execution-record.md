@@ -17,6 +17,71 @@ Goal A does not claim large-scale graph sessions are implemented. Graph-session
 contracts can be designed as follow-up work, but this repo split should not block
 that direction.
 
+## Current Acceptance Map
+
+This map is the working verifier for Goal A. Treat open PR evidence as
+provisional until the relevant stacks are merged.
+
+| Goal A requirement | Current evidence | Remaining merge dependency |
+| --- | --- | --- |
+| `gaia-research` exists as a standalone repo | Repo `SiliconEinstein/gaia-research`, package metadata, wheel build, installed-wheel smoke | Merge gaia-research PR stack |
+| Gaia core provides public API surfaces | Gaia PR #770 declares inquiry review state/API; gaia-research PR #7 verifies exact callables `run_review` and `render_markdown` | Merge Gaia #770 and gaia-research #7+ |
+| `gaia research` reconnects through plugin/entry point | Gaia PR #769 loads `gaia.cli_plugins`; Gaia PR #772 hands off legacy `research`; gaia-research PR #5 exposes plugin command; PR #12 smoke can run `gaia research doctor` / `gaia research review --json` against Gaia #772 via `GAIA_CORE_SPEC` | Merge Gaia #769 then #772; merge gaia-research #5/#12 |
+| CI proves `gaia-research -> Gaia core` one-way dependency | gaia-research PR #7 callable contract, PR #12 installed-wheel smoke, PR #13 source-boundary test | Merge gaia-research #7/#12/#13 |
+| Current review-run migrates with parity | gaia-research PR #2 disk contract, #3 runner bridge, #4 standalone CLI, #5 plugin command, #9 status, #10/#11 JSON, #12 Gaia CLI review smoke | Merge gaia-research #2-#12 and Gaia #772 |
+| `.gaia/research/**` ownership is clear | Gaia PR #771 namespace declaration; gaia-research PR #2/#3 tests write `.gaia/research/runs/**` and assert no `.gaia/research_loop` | Merge Gaia #771 and gaia-research #2+ |
+| No large-scale graph support is claimed | README and this execution record state graph sessions are follow-up, not implemented | Preserve wording while merging |
+
+## Final Merge And Completion Audit
+
+Do not mark Goal A complete until this audit passes against merged `main`
+branches.
+
+Merge sequencing:
+
+1. Merge Gaia PR #769 (`gaia.cli_plugins` loader).
+2. Merge Gaia PR #770 (research/inquiry public state/API).
+3. Merge Gaia PR #771 (`.gaia/research/**` namespace ownership).
+4. Rebase or retarget Gaia PR #772 onto Gaia `main`, then merge the
+   `gaia research` handoff.
+5. Merge the gaia-research stack in order, preserving each PR's execution
+   record updates.
+
+Final Gaia core audit:
+
+```bash
+uv run pytest tests/cli/test_cli_plugins.py tests/cli/test_research.py::test_research_rejects_non_package_without_creating_layout -q
+uv run ruff check gaia/cli/main.py tests/cli/test_cli_plugins.py
+uv run mypy gaia/cli/main.py tests/cli/test_cli_plugins.py
+```
+
+Final gaia-research audit:
+
+```bash
+uv run pytest -q
+uv run ruff check src tests
+uv run mypy src tests
+uv build --wheel --out-dir dist
+scripts/smoke_installed_wheel.sh
+```
+
+Final cross-repo review-run smoke:
+
+```bash
+GAIA_REVIEW_PACKAGE=<tmp-copy-of-mendel-v0-5-gaia> scripts/smoke_installed_wheel.sh
+```
+
+Expected completion evidence:
+
+- `scripts/smoke_installed_wheel.sh` no longer prints the handoff skip message
+  when using Gaia `main`.
+- `gaia research doctor` succeeds from the installed wheel environment.
+- `gaia research review --json --no-infer` returns `status=completed`,
+  `phase=report`, and writes under `.gaia/research/runs/<run-id>/`.
+- `gaia-research` tests still prove no `.gaia/research_loop` recreation.
+- README and this execution record still say graph sessions are follow-up work,
+  not implemented Goal A functionality.
+
 ## PR Log
 
 ### PR #1: CLI Plugin Entry Point
@@ -302,3 +367,28 @@ Verifier:
 - `uv run pytest -q`
 - `uv run ruff check src tests`
 - `uv run mypy src tests`
+
+### PR #13: Source Boundary Contract
+
+Branch: `feature/source-boundary-contract`
+
+Learning:
+
+- The one-way dependency contract should be visible in both package metadata
+  and source shape, not only in runtime smoke tests.
+- Runtime package metadata should name Gaia only as `gaia-lang`; adding other
+  Gaia package dependencies should fail CI.
+- `gaia-research` should keep Gaia core access behind declared dynamic bridge
+  points (`contracts.py` and `runner.py`) instead of static `import gaia`
+  statements spread across the package.
+- This keeps the downstream package honest about depending on public surfaces
+  and makes accidental coupling to Gaia internals fail in CI.
+
+Verifier:
+
+- `uv run pytest tests/test_source_boundary.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv build --wheel --out-dir dist`
+- `scripts/smoke_installed_wheel.sh`
