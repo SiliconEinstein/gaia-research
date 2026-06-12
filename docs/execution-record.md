@@ -81,3 +81,29 @@ Verifier:
   `run_package_review(..., no_infer=True)`, producing `completed/report` with
   `compile_status=ok`
 - `uv build --wheel --out-dir dist`
+
+### PR #4: Standalone Review CLI
+
+Branch: `feature/review-cli`
+
+Learning:
+
+- The standalone `gaia-research` script should expose the same review-run path
+  before the Gaia plugin stack is flattened.
+- Keeping `gaia-research review` as a thin wrapper around `run_package_review`
+  gives product, skill, and agent callers a runnable migration path while Gaia
+  core plugin discovery is still an open PR.
+- The command should preserve the existing no-argument bootstrap health check so
+  CI and install smoke tests stay cheap.
+
+Verifier:
+
+- `uv run pytest tests/test_cli_review.py -q`
+- `uv run pytest tests/test_cli_review.py tests/test_review_runner.py tests/test_review_run_contract.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv run gaia-research`
+- copied `examples/mendel-v0-5-gaia` to a temporary package and ran
+  `uv run gaia-research review --path <tmp-pkg> --topic smoke --profile quick
+  --run-id smoke-review --no-infer`, producing `final_report.md`
