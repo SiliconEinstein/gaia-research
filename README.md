@@ -112,6 +112,7 @@ uv run pytest -q
 uv run ruff check src tests
 uv run mypy src tests
 uv build --wheel --out-dir dist
+scripts/smoke_installed_wheel.sh
 ```
 
 The test suite verifies:

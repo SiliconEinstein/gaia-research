@@ -257,3 +257,29 @@ Verifier:
 - copied `examples/mendel-v0-5-gaia` to a temporary package and ran
   `gaia-research review --json`, producing completed/report JSON with
   `events=6`
+
+### PR #12: Installed Wheel Smoke Gate
+
+Branch: `feature/ci-installed-wheel-smoke`
+
+Learning:
+
+- Building the wheel is necessary but not sufficient for the split boundary;
+  CI should install the built artifact into a clean environment and run the
+  packaged console script.
+- The installed-wheel smoke should also verify the packaged
+  `gaia.cli_plugins` entry point, because `gaia research` reconnects through
+  distribution metadata.
+- Keeping the smoke in `scripts/smoke_installed_wheel.sh` makes the CI gate
+  locally reproducible.
+- The script should avoid `mapfile` so local macOS bash and GitHub Actions bash
+  both run the same verifier.
+
+Verifier:
+
+- `uv build --wheel --out-dir dist`
+- `scripts/smoke_installed_wheel.sh`
+- `bash -n scripts/smoke_installed_wheel.sh`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
