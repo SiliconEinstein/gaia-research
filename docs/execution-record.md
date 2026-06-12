@@ -107,3 +107,29 @@ Verifier:
 - copied `examples/mendel-v0-5-gaia` to a temporary package and ran
   `uv run gaia-research review --path <tmp-pkg> --topic smoke --profile quick
   --run-id smoke-review --no-infer`, producing `final_report.md`
+
+### PR #5: Gaia CLI Plugin Review Command
+
+Branch: `feature/review-plugin`
+
+Learning:
+
+- The Gaia plugin entry point should register a real `gaia research review`
+  command, not only a placeholder group.
+- The plugin command should reuse `run_package_review` so standalone CLI and
+  Gaia plugin calls share the same review-run envelope and failure behavior.
+- This PR proves the downstream package owns the command implementation through
+  `gaia.cli_plugins`; Gaia core still only needs entry-point discovery.
+- Direct `uv run gaia research review ...` remains blocked until Gaia core stops
+  registering its built-in research command ahead of plugins. That handoff
+  belongs in a Gaia core PR, not in this downstream package.
+
+Verifier:
+
+- `uv run pytest tests/test_cli_plugin.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv run python -c 'import typer; from gaia.cli.main import load_cli_plugins; ...'`
+  returned `['research']` and registered the `research` group on a fresh root app
+- `uv build --wheel --out-dir dist`
