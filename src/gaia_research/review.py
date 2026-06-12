@@ -144,6 +144,17 @@ def _append_event(
     return event
 
 
+def record_review_run_event(
+    handle: ReviewRunHandle,
+    event_type: str,
+    *,
+    phase: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Append an observable event to a review run."""
+    return _append_event(handle, event_type, phase=phase, payload=payload)
+
+
 def _read_events(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -227,7 +238,12 @@ def read_review_run(pkg_path: str | Path, run_id: str) -> ReviewRunSnapshot:
     )
 
 
-def complete_review_run(handle: ReviewRunHandle, markdown: str) -> ReviewRunSnapshot:
+def complete_review_run(
+    handle: ReviewRunHandle,
+    markdown: str,
+    *,
+    state_updates: dict[str, Any] | None = None,
+) -> ReviewRunSnapshot:
     """Write the final report and mark the run completed."""
     state = json.loads(handle.state_path.read_text(encoding="utf-8"))
     handle.report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +255,8 @@ def complete_review_run(handle: ReviewRunHandle, markdown: str) -> ReviewRunSnap
             "completed_at": _utcnow(),
         }
     )
+    if state_updates:
+        state.update(state_updates)
     state.setdefault("artifacts", {})["final_report"] = str(handle.report_path)
     _write_json_atomic(handle.state_path, state)
     _append_event(
@@ -247,6 +265,32 @@ def complete_review_run(handle: ReviewRunHandle, markdown: str) -> ReviewRunSnap
         phase="report",
         payload={"final_report": str(handle.report_path)},
     )
+    return ReviewRunSnapshot(
+        handle=handle,
+        state=state,
+        events=_read_events(handle.events_path),
+        report_path=handle.report_path,
+    )
+
+
+def fail_review_run(
+    handle: ReviewRunHandle,
+    error: str,
+    *,
+    phase: str = "core_review",
+) -> ReviewRunSnapshot:
+    """Mark a review run failed while preserving its observable event log."""
+    state = json.loads(handle.state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "status": "failed",
+            "phase": phase,
+            "failed_at": _utcnow(),
+            "error": error,
+        }
+    )
+    _write_json_atomic(handle.state_path, state)
+    _append_event(handle, f"{phase}.failed", phase=phase, payload={"error": error})
     return ReviewRunSnapshot(
         handle=handle,
         state=state,
