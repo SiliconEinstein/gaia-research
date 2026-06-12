@@ -148,3 +148,25 @@ Learning:
 Verifier:
 
 - `uv build --wheel --out-dir dist`
+
+### PR #7: Exact Gaia Core API Contract
+
+Branch: `feature/core-api-contract`
+
+Learning:
+
+- `gaia-research` should verify the exact Gaia core callables it uses, not only
+  broad module imports.
+- The review-run bridge currently depends on
+  `gaia.engine.inquiry.review:run_review` and
+  `gaia.engine.inquiry.review:render_markdown`.
+- Keeping this contract in the downstream repo makes accidental Gaia core API
+  movement visible in downstream CI.
+
+Verifier:
+
+- `uv run pytest tests/test_core_contract.py -q`
+- `uv run pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv build --wheel --out-dir dist`
