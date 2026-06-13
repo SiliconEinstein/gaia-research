@@ -55,6 +55,9 @@ Each row must classify the old surface as one of:
 `gaia search lkm` is always `primitive-excluded`. It remains a Gaia core
 primitive, not a command to migrate into `gaia-research`.
 
+The current matrix is
+[Research Workflow Parity Matrix](2026-06-13-research-workflow-parity-matrix.md).
+
 ### 2. Standalone CLI Reproduces Existing Workflow Capability
 
 Every Gaia-main upper research workflow capability in the parity matrix must
