@@ -37,9 +37,13 @@ allow-direct-references = true
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["docs/prior-art"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.12"

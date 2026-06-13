@@ -35,9 +35,7 @@ def test_research_workflow_does_not_import_gaia_core_research_implementation() -
                         offenders.append(f"{relative_path}:{node.lineno}")
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == "gaia.engine.research" or module.startswith(
-                    "gaia.engine.research."
-                ):
+                if module == "gaia.engine.research" or module.startswith("gaia.engine.research."):
                     offenders.append(f"{relative_path}:{node.lineno}")
             elif (
                 isinstance(node, ast.Call)

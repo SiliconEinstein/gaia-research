@@ -113,8 +113,7 @@ def test_record_event_appends_one_json_line_per_event(tmp_path: Path) -> None:
     )
 
     events = [
-        json.loads(line)
-        for line in handle.events_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in handle.events_path.read_text(encoding="utf-8").splitlines()
     ]
     assert [event["type"] for event in events] == [
         "run.created",

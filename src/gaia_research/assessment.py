@@ -550,9 +550,7 @@ def _repair_grounded_relations(
         if not isinstance(source_refs, list):
             continue
         grounded_refs = [
-            dict(ref)
-            for ref in source_refs
-            if _source_ref_is_grounded(ref, valid_ids=valid_ids)
+            dict(ref) for ref in source_refs if _source_ref_is_grounded(ref, valid_ids=valid_ids)
         ]
         if not grounded_refs:
             continue

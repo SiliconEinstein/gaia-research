@@ -485,14 +485,10 @@ async def _litellm_completion(
 
 def _litellm_env_kwargs() -> dict[str, object]:
     kwargs: dict[str, object] = {}
-    api_base = (
-        os.environ.get("GAIA_RESEARCH_LLM_API_BASE")
-        or os.environ.get("LITELLM_PROXY_API_BASE")
+    api_base = os.environ.get("GAIA_RESEARCH_LLM_API_BASE") or os.environ.get(
+        "LITELLM_PROXY_API_BASE"
     )
-    api_key = (
-        os.environ.get("GAIA_RESEARCH_LLM_API_KEY")
-        or os.environ.get("LITELLM_PROXY_API_KEY")
-    )
+    api_key = os.environ.get("GAIA_RESEARCH_LLM_API_KEY") or os.environ.get("LITELLM_PROXY_API_KEY")
     if api_base and api_base.strip():
         kwargs["api_base"] = _normalize_litellm_api_base(api_base)
     if api_key and api_key.strip():
