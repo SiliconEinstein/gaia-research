@@ -17,14 +17,18 @@ Gaia core must not import `gaia_research`.
 
 Implemented in the first bridge milestone:
 
-- package-local review-run SDK and disk contract;
+- package-local run SDK and disk contract;
 - `.gaia/research/runs/<run-id>/` state, events, checkpoint, and final report
   artifacts;
-- `gaia-research review` standalone CLI;
 - `gaia.cli_plugins` entry point for `gaia research`;
-- downstream contract tests against Gaia core public modules and review
-  callables;
+- downstream contract tests against Gaia core public modules;
 - CI lint, typecheck, tests, and wheel build.
+
+The earlier `gaia-research review` bridge around Gaia core
+`gaia.engine.inquiry.review.run_review` was removed from the active CLI because
+it was not the research workflow parity target. The current parity target is the
+upper `gaia research ...` workflow from Gaia main, not the inquiry review
+bridge.
 
 This bridge milestone is not the completed research module split. The completed
 split requires this repository to own the existing upper report workflow that
@@ -70,64 +74,37 @@ schemas, CLI behavior, or engine boundaries. Use
 [docs/execution-record.md](docs/execution-record.md) for PR learnings and
 tracking, not as the canonical design source.
 
-## Review-Run Usage
+## Report-Run Status
 
-Run a Gaia inquiry review through the standalone entry point:
-
-```bash
-uv run gaia-research review \
-  --path /path/to/example-gaia \
-  --topic "aspirin primary prevention" \
-  --profile quick \
-  --run-id aspirin-review \
-  --no-infer
-```
-
-The same implementation is exposed to Gaia core through the CLI plugin entry
-point:
-
-```bash
-gaia research review \
-  --path /path/to/example-gaia \
-  --topic "aspirin primary prevention" \
-  --profile quick \
-  --run-id aspirin-review \
-  --no-infer
-```
-
-The Gaia command requires a Gaia core version that loads `gaia.cli_plugins` and
-hands off the legacy `research` group to the installed `gaia-research` plugin.
-
-Add `--json` to either review command when an agent or product caller needs the
-completed run id, status, phase, run directory, report path, and event count
-without parsing human-readable text.
-
-Inspect a completed or failed run:
+Inspect a report workflow run:
 
 ```bash
 uv run gaia-research status \
-  --path /path/to/example-gaia \
-  --run-id aspirin-review
+  --path /path/to/workspace \
+  --run-id aspirin-fast
 ```
 
 Add `--json` for machine-readable status output.
 
-## Review-Run Artifacts
+## Report-Run Artifacts
 
-Each run writes an observable envelope under the package being reviewed:
+Each report workflow run writes an observable envelope under the workspace:
 
 ```text
-<package>/.gaia/research/runs/<run-id>/
+<workspace>/.gaia/research/runs/<run-id>/
   state.json
   events.ndjson
-  checkpoints/query_plan.request.json
-  final_report.md
+  landscape/
+  field_map/
+  focuses/
+  assessments/
+  materialization/
+  reports/
 ```
 
-`state.json` records status, phase, package metadata, pending checkpoint, final
-report path, and Gaia core review metadata. `events.ndjson` records lifecycle
-events such as `run.created`, `core_review.started`, `core_review.completed`,
-`core_review.failed`, and `run.completed`.
+`state.json` records status, phase, topic, profile, and artifact directories.
+`events.ndjson` records lifecycle events such as `run.created` and later stage
+events.
 
 The old `.gaia/research_loop` path is not recreated.
 
@@ -151,9 +128,6 @@ GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@code
   scripts/smoke_installed_wheel.sh
 ```
 
-Add `GAIA_REVIEW_PACKAGE=/path/to/example-gaia` to the same command to run
-`gaia research review --json --no-infer` through the installed Gaia CLI plugin.
-
 The test suite verifies:
 
 - `gaia-research` can import declared Gaia core public modules;
@@ -161,7 +135,5 @@ The test suite verifies:
 - runtime Gaia package dependency metadata names only `gaia-lang`;
 - gaia-research source does not statically import Gaia core modules; the bridge
   stays behind declared dynamic public surfaces;
-- the exact Gaia core review callables used by the bridge are callable and keep
-  the expected parameter shape;
 - the CLI plugin entry point is present in package metadata;
-- review-run artifacts are written under `.gaia/research/runs/**`.
+- report-run artifacts are written under `.gaia/research/runs/**`.

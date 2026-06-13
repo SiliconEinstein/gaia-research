@@ -511,3 +511,52 @@ Verifier:
 - `uv run mypy src tests`
 - `uv build --wheel --out-dir dist`
 - `scripts/smoke_installed_wheel.sh`
+
+### Current Branch: Report Workflow Parity Execution
+
+Branch: `codex/report-workflow-parity-plan`
+
+Learning:
+
+- The active split goal needs an explicit acceptance spec and parity matrix
+  before code migration; otherwise it is too easy to mistake the earlier
+  review-run bridge for completed research workflow parity.
+- Gaia main's upper research workflow surface is broader than the bridge:
+  `gaia research contract/status/trace/run/explore/expand/focus/assess/propose/promote/report/stop`
+  plus report-relevant `gaia-lkm-explore` verbs must be mapped.
+- `gaia search lkm`, `gaia add`, `gaia inquiry`, and `gaia author` remain Gaia
+  core primitives. The migration target is orchestration, artifacts, and CLI
+  workflow ownership.
+- `gaia research run --topic ...` should become the primary
+  `gaia-research report --topic ...` / `gaia research report --topic ...`
+  fast report path.
+- The first code slice should be the report workflow run-state contract because
+  every later stage, resume behavior, CLI JSON output, and fast smoke verifier
+  depends on stable `.gaia/research/runs/<run-id>/` state and events.
+- The misaligned `review` bridge has now been removed from active CLI/plugin
+  surfaces. It was useful as an early package-boundary proof, but keeping it as
+  a command would continue to confuse Gaia inquiry review with the real
+  research workflow parity target.
+- Report workflow parity must move Gaia main's landscape, field-map, focus,
+  assessment, materialization-decision, and report orchestration implementation
+  into `gaia-research`; Gaia core should keep primitives and handoff stubs, not
+  hidden orchestration ownership.
+- In this repo, run tests as `uv run python -m pytest ...` after
+  `uv sync --extra dev`; before syncing dev dependencies, `uv run pytest`
+  resolved to an external pytest entry point.
+
+Verifier:
+
+- `rg "Research Workflow Parity Acceptance|gaia-research report|gaia research report|3-5 minutes|primitive-excluded" docs README.md AGENTS.md`
+- `rg "gaia research run|gaia research report|gaia-lkm-explore turn|primitive-excluded|652aa11|Fast Report Acceptance Path" docs/specs docs/plans docs/foundations`
+- `git diff --check`
+- `uv sync --extra dev`
+- `uv run python -m pytest -q tests/test_workflow_state.py`
+- `uv run ruff check src/gaia_research/workflow_state.py tests/test_workflow_state.py`
+- `uv run mypy src/gaia_research/workflow_state.py`
+- `uv run python -m pytest -q tests/test_cli_status.py tests/test_cli_plugin.py tests/test_core_contract.py tests/test_source_boundary.py tests/test_installed_wheel_smoke.py tests/test_workflow_state.py`
+- `uv run python -m pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv build --wheel --out-dir dist`
+- `scripts/smoke_installed_wheel.sh`

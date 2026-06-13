@@ -15,6 +15,8 @@ surfaces.
 **Architecture:** Keep Gaia core as the primitive substrate and move workflow
 orchestration into `gaia-research`. The CLI and Gaia plugin are thin adapters
 over one engine API that writes durable artifacts under `.gaia/research/runs/`.
+This is a code ownership migration, not a wrapper over Gaia core's upper
+research implementation.
 
 **Tech Stack:** Python, Typer, argparse, pytest, ruff, mypy, Gaia core public
 surfaces, saved `gaia search lkm` JSON payloads, `.gaia/research` artifacts.
@@ -57,13 +59,9 @@ but they are not acceptance criteria for this milestone.
 - Create `src/gaia_research/lkm.py`: adapter for saved LKM search payloads and,
   later, Gaia core LKM search primitive calls.
 - Create `src/gaia_research/report.py`: final report assembly over research
-  artifacts and the existing review-run renderer where parity requires it.
-- Modify `src/gaia_research/cli.py`: add primary `report` command and keep
-  `review` as a deprecated compatibility alias if still needed.
-- Modify `src/gaia_research/plugin.py`: expose `gaia research report` and keep
-  `gaia research review` as a deprecated alias if still needed.
-- Modify `src/gaia_research/runner.py`: either delegate to the new workflow or
-  become the report rendering bridge only.
+  artifacts.
+- Modify `src/gaia_research/cli.py`: add primary `report` command.
+- Modify `src/gaia_research/plugin.py`: expose `gaia research report`.
 - Modify `README.md`: update examples from `review` to `report`.
 - Modify `AGENTS.md`: keep the same-PR foundations update rule current.
 - Create `tests/test_workflow_state.py`: state path and resume contract tests.
@@ -72,7 +70,7 @@ but they are not acceptance criteria for this milestone.
   artifact tests.
 - Create `tests/test_report_workflow.py`: end-to-end topic-to-report workflow
   tests with stubbed LKM inputs.
-- Modify `tests/test_cli_review.py`: rename or split into report-command tests.
+- Create `tests/test_cli_report.py`: report-command tests.
 - Modify `tests/test_cli_plugin.py`: add `gaia research report` plugin tests.
 - Modify `tests/test_source_boundary.py`: keep Gaia core imports behind declared
   dynamic surfaces or subprocess adapters.
@@ -373,7 +371,7 @@ but they are not acceptance criteria for this milestone.
 - Create: `src/gaia_research/workflow.py`
 - Create: `src/gaia_research/report.py`
 - Create: `tests/test_report_workflow.py`
-- Modify: `src/gaia_research/runner.py`
+- Modify: `src/gaia_research/workflow_state.py`
 
 - [ ] **Step 1: Write failing workflow tests**
 
@@ -426,7 +424,7 @@ but they are not acceptance criteria for this milestone.
 - [ ] **Step 4: Run workflow tests**
 
   ```bash
-  uv run pytest -q tests/test_report_workflow.py tests/test_review_runner.py
+  uv run pytest -q tests/test_report_workflow.py tests/test_workflow_state.py
   ```
 
   Expected: PASS.
@@ -434,7 +432,7 @@ but they are not acceptance criteria for this milestone.
 - [ ] **Step 5: Commit**
 
   ```bash
-  git add src/gaia_research/workflow.py src/gaia_research/report.py src/gaia_research/runner.py tests/test_report_workflow.py
+  git add src/gaia_research/workflow.py src/gaia_research/report.py src/gaia_research/workflow_state.py tests/test_report_workflow.py
   git commit -m "feat: add report workflow engine"
   ```
 
@@ -443,7 +441,7 @@ but they are not acceptance criteria for this milestone.
 **Files:**
 - Modify: `src/gaia_research/cli.py`
 - Modify: `src/gaia_research/plugin.py`
-- Modify: `tests/test_cli_review.py`
+- Create: `tests/test_cli_report.py`
 - Modify: `tests/test_cli_plugin.py`
 - Modify: `README.md`
 
@@ -467,27 +465,25 @@ but they are not acceptance criteria for this milestone.
 - [ ] **Step 2: Run failing CLI tests**
 
   ```bash
-  uv run pytest -q tests/test_cli_review.py tests/test_cli_plugin.py
+  uv run pytest -q tests/test_cli_report.py tests/test_cli_plugin.py
   ```
 
-  Expected: FAIL because only `review` exists.
+  Expected: FAIL because the report command does not exist yet.
 
-- [ ] **Step 3: Add `report` and alias `review`**
+- [ ] **Step 3: Add `report`**
 
-  Add `report` as the primary command. Keep `review` as a deprecated alias only
-  if existing installed users still need migration time. Human-readable output
-  must say `report run completed`, not `review run completed`.
+  Add `report` as the primary command. Do not restore `review`; it was an
+  inquiry review bridge and is not part of research workflow parity.
 
 - [ ] **Step 4: Update README examples**
 
   Replace primary examples with `gaia-research report` and
-  `gaia research report`. Move `review` to a short compatibility note if the
-  alias remains.
+  `gaia research report`.
 
 - [ ] **Step 5: Run CLI tests**
 
   ```bash
-  uv run pytest -q tests/test_cli_review.py tests/test_cli_plugin.py
+  uv run pytest -q tests/test_cli_report.py tests/test_cli_plugin.py
   ```
 
   Expected: PASS.
@@ -495,7 +491,7 @@ but they are not acceptance criteria for this milestone.
 - [ ] **Step 6: Commit**
 
   ```bash
-  git add src/gaia_research/cli.py src/gaia_research/plugin.py tests/test_cli_review.py tests/test_cli_plugin.py README.md
+  git add src/gaia_research/cli.py src/gaia_research/plugin.py tests/test_cli_report.py tests/test_cli_plugin.py README.md
   git commit -m "feat: expose report workflow commands"
   ```
 

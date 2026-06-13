@@ -20,6 +20,11 @@ a short-lived deprecated alias, or intentionally removed after parity.
 primitive. `gaia-research` may call it, but must not replace Gaia core ownership
 of LKM search.
 
+The target is code ownership migration, not a wrapper. After parity, Gaia core
+must not retain the implementation logic for landscape, field map, focus
+selection, assessment, materialization-decision orchestration, or report
+orchestration. Gaia core may keep primitives and handoff/deprecation stubs.
+
 ## Inventory Sources
 
 - `pyproject.toml`: `gaia` and `gaia-lkm-explore` console scripts.
@@ -44,6 +49,18 @@ of LKM search.
 | `gaia add`, `gaia inquiry`, `gaia author` | `primitive-excluded` | Keep in Gaia core; orchestrate from `gaia-research` | These are accepted package/inquiry/source operations, not research workflow ownership. |
 
 ## `gaia research ...` Surfaces
+
+### Removed `gaia-research review` Bridge
+
+`gaia-research review` and `gaia research review` wrapped Gaia core
+`gaia.engine.inquiry.review.run_review`. They were removed from the active
+surface because package inquiry review is not parity for Gaia main's upper
+research workflow.
+
+| Current `gaia-research` surface | Classification | Long-term target | Rationale |
+|---|---|---|---|
+| `gaia-research review` | `removed-as-misaligned` | Not restored | It called Gaia inquiry review, not Gaia main research workflow. |
+| `gaia research review` | `removed-as-misaligned` | Not restored | Plugin proof point was useful, but it pulled the split toward the wrong target. |
 
 | Old Gaia main surface | Classification | `gaia-research` target | Required parity behavior |
 |---|---|---|---|
@@ -132,9 +149,9 @@ Expected verifier output:
 
 ## Current Implementation Gap Summary
 
-As of this matrix, `gaia-research` has a bridge milestone with `review` and
-`status` commands, `.gaia/research/runs/<run-id>/` state, and Gaia CLI plugin
-handoff. It does not yet satisfy this parity matrix.
+As of this matrix, `gaia-research` has removed the misaligned `review` bridge
+and now has report workflow state/status foundations under
+`.gaia/research/runs/<run-id>/`. It does not yet satisfy this parity matrix.
 
 The next implementation work should therefore start with:
 

@@ -46,10 +46,6 @@ if [[ "$*" == "research doctor" ]]; then
   echo "gaia-research doctor OK"
   exit 0
 fi
-if [[ "$*" == *"research review"* ]]; then
-  echo '{{"run_id": "smoke-review", "status": "completed"}}'
-  exit 0
-fi
 exit 7
 SH
   chmod +x "${{venv}}/bin/gaia"
@@ -66,7 +62,6 @@ fi
     env["GAIA_CORE_SPEC"] = (
         "gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff"
     )
-    env["GAIA_REVIEW_PACKAGE"] = str(tmp_path / "demo-gaia")
 
     result = subprocess.run(
         [str(repo / "scripts" / "smoke_installed_wheel.sh"), str(dist)],
@@ -82,9 +77,8 @@ fi
     assert "uv pip install --python" in command_log.read_text(encoding="utf-8")
     assert "--reinstall" in command_log.read_text(encoding="utf-8")
     assert env["GAIA_CORE_SPEC"] in command_log.read_text(encoding="utf-8")
-    assert "gaia research review" in command_log.read_text(encoding="utf-8")
-    assert f"--path {env['GAIA_REVIEW_PACKAGE']}" in command_log.read_text(encoding="utf-8")
-    assert "--json" in command_log.read_text(encoding="utf-8")
+    assert "gaia research doctor" in command_log.read_text(encoding="utf-8")
+    assert "gaia research review" not in command_log.read_text(encoding="utf-8")
 
 
 def test_smoke_script_can_require_gaia_research_handoff(tmp_path: Path) -> None:

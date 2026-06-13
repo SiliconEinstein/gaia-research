@@ -148,6 +148,17 @@ def read_state(handle: ReportRunHandle) -> ReportRunState:
     return _state_from_payload(payload)
 
 
+def read_events(handle: ReportRunHandle) -> list[dict[str, Any]]:
+    """Read report workflow events from disk."""
+    if not handle.events_path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in handle.events_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
 def record_event(
     handle: ReportRunHandle,
     event_type: str,
@@ -243,6 +254,7 @@ __all__ = [
     "ReportRunHandle",
     "ReportRunState",
     "create_report_run",
+    "read_events",
     "read_state",
     "record_event",
     "resume_report_run",

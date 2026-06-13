@@ -21,7 +21,7 @@ def test_runtime_gaia_dependency_is_only_gaia_lang() -> None:
 
 def test_gaia_core_imports_stay_behind_dynamic_bridge() -> None:
     src_root = Path(__file__).resolve().parents[1] / "src" / "gaia_research"
-    dynamic_bridge_files = {Path("contracts.py"), Path("runner.py")}
+    dynamic_bridge_files = {Path("contracts.py")}
     offenders: list[str] = []
 
     for path in sorted(src_root.rglob("*.py")):

@@ -169,6 +169,12 @@ Gaia core must stop owning upper research workflow implementation after parity
 replacement exists. Old upper workflow surfaces should either hand off to
 `gaia-research`, become deprecated aliases, or be removed after parity.
 
+The implementation code for landscape, field map, focus selection, assessment,
+materialization-decision orchestration, and report orchestration must live in
+`gaia-research` after migration. Gaia core may expose primitives and CLI
+handoff/deprecation stubs, but it must not remain the hidden implementation
+owner for those upper workflow stages.
+
 ### 7. Verification Suite Covers The Split
 
 Completion requires all of the following evidence:
