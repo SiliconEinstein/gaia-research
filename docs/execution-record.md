@@ -3,9 +3,43 @@
 This record tracks the repository split work that belongs with each execution PR.
 Keep future PR learnings here instead of opening separate tracking-only PRs.
 
-## Goal A Boundary
+## 2026-06-13 Correction
 
-Goal A is a repository-boundary and connection goal:
+The first merged stack completed a bridge milestone, not the full research
+module split.
+
+Bridge milestone completed:
+
+- standalone `gaia-research` repo;
+- Gaia CLI plugin handoff;
+- package-local report/review-run envelope under `.gaia/research/runs/**`;
+- one-way dependency checks from `gaia-research` to Gaia core;
+- current inquiry review/report runner parity.
+
+Full research split still requires `gaia-research` to own the existing upper
+report workflow that starts from a topic and flows through:
+
+```text
+topic
+  -> landscape
+  -> field map
+  -> focus selection
+  -> assess/report-ready artifact
+  -> materialization decision
+  -> report
+```
+
+This current migration does not implement graph-session expansion. Large-scale
+pause/resume graph growth and O(N) continuous expansion are the next milestone.
+
+Gaia core keeps primitives such as `gaia search lkm`, `gaia add`,
+`gaia inquiry`, `gaia author`, materialization, package checks, inference, and
+rendering. `gaia-research` owns upper research workflows.
+
+## Bridge Milestone Goal A Boundary
+
+Bridge Milestone Goal A was a repository-boundary and connection goal. It is not
+the full research module split:
 
 - keep `gaia-research` as a standalone repo;
 - depend one-way on Gaia core public APIs;
@@ -13,16 +47,16 @@ Goal A is a repository-boundary and connection goal:
 - migrate the current review-run path with parity;
 - keep `.gaia/research/**` ownership clear.
 
-Goal A does not claim large-scale graph sessions are implemented. Graph-session
-contracts can be designed as follow-up work, but this repo split should not block
-that direction.
+Bridge Milestone Goal A does not claim large-scale graph sessions are
+implemented, and it does not claim the topic-driven report workflow has been
+fully migrated.
 
 ## Current Acceptance Map
 
-This map is the working verifier for Goal A. Treat open PR evidence as
-provisional until the relevant stacks are merged.
+This map is the working verifier for Bridge Milestone Goal A. Treat open PR
+evidence as provisional until the relevant stacks are merged.
 
-| Goal A requirement | Current evidence | Remaining merge dependency |
+| Bridge milestone requirement | Current evidence | Remaining merge dependency |
 | --- | --- | --- |
 | `gaia-research` exists as a standalone repo | Repo `SiliconEinstein/gaia-research`, package metadata, wheel build, installed-wheel smoke | Merge gaia-research PR stack |
 | Gaia core provides public API surfaces | Gaia PR #770 declares inquiry review state/API; gaia-research PR #7 verifies exact callables `run_review` and `render_markdown` | Gaia #770 merged; merge gaia-research PR stack |
@@ -34,8 +68,8 @@ provisional until the relevant stacks are merged.
 
 ## Final Merge And Completion Audit
 
-Do not mark Goal A complete until this audit passes against merged `main`
-branches.
+Do not mark Bridge Milestone Goal A complete until this audit passes against
+merged `main` branches.
 
 Merge sequencing:
 

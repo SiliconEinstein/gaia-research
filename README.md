@@ -1,10 +1,11 @@
 # gaia-research
 
-Standalone research package for Gaia.
+Standalone research workflow package for Gaia.
 
-This repository owns Gaia's external research workflows. Gaia core remains the
-language, package, authoring, materialization, inquiry, and plugin substrate.
-Dependency direction is intentionally one-way:
+This repository is being migrated toward ownership of Gaia's upper research
+workflows. Gaia core remains the language, package, LKM search, authoring,
+materialization, inquiry, and plugin substrate. Dependency direction is
+intentionally one-way:
 
 ```text
 gaia-research -> gaia-lang
@@ -12,9 +13,9 @@ gaia-research -> gaia-lang
 
 Gaia core must not import `gaia_research`.
 
-## Current Scope
+## Current Scope And Correction
 
-Implemented in this split stack:
+Implemented in the first bridge milestone:
 
 - package-local review-run SDK and disk contract;
 - `.gaia/research/runs/<run-id>/` state, events, checkpoint, and final report
@@ -25,14 +26,33 @@ Implemented in this split stack:
   callables;
 - CI lint, typecheck, tests, and wheel build.
 
-Not implemented here:
+This bridge milestone is not the completed research module split. The completed
+split requires this repository to own the existing upper report workflow that
+currently spans Gaia research and `gaia-lkm-explore` surfaces.
+
+Current migration target:
+
+- topic-driven report workflow;
+- landscape;
+- field map;
+- focus selection;
+- assessment/report-ready artifact;
+- materialization decision;
+- report.
+
+Not in the current migration target:
 
 - large-scale graph sessions;
 - long-running pause/resume graph expansion;
-- full explore/assess/propose migration from Gaia core.
+- deep/broad continuous large-scale expansion policies.
 
-Those follow-up capabilities should build on this package boundary without
-changing the dependency direction.
+Those graph-session capabilities are follow-up work. The current milestone is
+report workflow parity, not graph-session expansion.
+
+Gaia core keeps primitives such as `gaia search lkm`, `gaia add`,
+`gaia inquiry`, `gaia author`, materialization, package checks, inference, and
+rendering. `gaia-research` owns the upper research workflow built from those
+primitives.
 
 ## Install For Development
 
@@ -41,6 +61,14 @@ uv sync --extra dev
 ```
 
 The package depends on Gaia core as `gaia-lang`.
+
+## Documentation
+
+Workflow foundations live in [docs/foundations](docs/foundations/README.md).
+Keep them current with code changes that alter workflow semantics, artifact
+schemas, CLI behavior, or engine boundaries. Use
+[docs/execution-record.md](docs/execution-record.md) for PR learnings and
+tracking, not as the canonical design source.
 
 ## Review-Run Usage
 
