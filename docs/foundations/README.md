@@ -3,6 +3,9 @@
 This directory is the durable design home for `gaia-research` workflow
 semantics.
 
+The current acceptance boundary is
+[Research Workflow Parity Acceptance](../specs/2026-06-13-research-workflow-parity-acceptance.md).
+
 Gaia core keeps primitives. `gaia-research` owns upper research workflows built
 from those primitives.
 

@@ -19,9 +19,8 @@ def test_runtime_gaia_dependency_is_only_gaia_lang() -> None:
     assert gaia_dependencies == ["gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@main"]
 
 
-def test_gaia_core_imports_stay_behind_dynamic_bridge() -> None:
+def test_research_workflow_does_not_import_gaia_core_research_implementation() -> None:
     src_root = Path(__file__).resolve().parents[1] / "src" / "gaia_research"
-    dynamic_bridge_files = {Path("contracts.py"), Path("runner.py")}
     offenders: list[str] = []
 
     for path in sorted(src_root.rglob("*.py")):
@@ -30,11 +29,13 @@ def test_gaia_core_imports_stay_behind_dynamic_bridge() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name == "gaia" or alias.name.startswith("gaia."):
+                    if alias.name == "gaia.engine.research" or alias.name.startswith(
+                        "gaia.engine.research."
+                    ):
                         offenders.append(f"{relative_path}:{node.lineno}")
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == "gaia" or module.startswith("gaia."):
+                if module == "gaia.engine.research" or module.startswith("gaia.engine.research."):
                     offenders.append(f"{relative_path}:{node.lineno}")
             elif (
                 isinstance(node, ast.Call)
@@ -43,8 +44,10 @@ def test_gaia_core_imports_stay_behind_dynamic_bridge() -> None:
                 and node.args
                 and isinstance(node.args[0], ast.Constant)
                 and isinstance(node.args[0].value, str)
-                and (node.args[0].value == "gaia" or node.args[0].value.startswith("gaia."))
-                and relative_path not in dynamic_bridge_files
+                and (
+                    node.args[0].value == "gaia.engine.research"
+                    or node.args[0].value.startswith("gaia.engine.research.")
+                )
             ):
                 offenders.append(f"{relative_path}:{node.lineno}")
 

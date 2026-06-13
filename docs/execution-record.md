@@ -511,3 +511,159 @@ Verifier:
 - `uv run mypy src tests`
 - `uv build --wheel --out-dir dist`
 - `scripts/smoke_installed_wheel.sh`
+
+### Current Branch: Report Workflow Parity Execution
+
+Branch: `codex/report-workflow-parity-plan`
+
+Learning:
+
+- The active split goal needs an explicit acceptance spec and parity matrix
+  before code migration; otherwise it is too easy to mistake the earlier
+  review-run bridge for completed research workflow parity.
+- Gaia main's upper research workflow surface is broader than the bridge:
+  `gaia research contract/status/trace/run/explore/expand/focus/assess/propose/promote/report/stop`
+  plus report-relevant `gaia-lkm-explore` verbs must be mapped.
+- `gaia search lkm`, `gaia add`, `gaia inquiry`, and `gaia author` remain Gaia
+  core primitives. The migration target is orchestration, artifacts, and CLI
+  workflow ownership.
+- `gaia research run --topic ...` should remain the primary workflow verb in
+  `gaia-research` and through plugin handoff. Do not introduce a separate
+  `report` command for the same orchestration; it would create a second product
+  surface for the same workflow.
+- `render --artifact` is a deterministic artifact-to-Markdown utility. It is
+  useful after or outside a run for inspecting existing artifacts, but it is not
+  the LLM report-writing stage. LLM report writing happens inside `run` as
+  `report_plan -> report_section -> report_stitch`, followed by the
+  `report.final` trace step that writes the final report.
+- The first code slice should be the report workflow run-state contract because
+  every later stage, resume behavior, CLI JSON output, and fast smoke verifier
+  depends on stable `.gaia/research/runs/<run-id>/` state and events.
+- The misaligned `review` bridge has now been removed from active CLI/plugin
+  surfaces. It was useful as an early package-boundary proof, but keeping it as
+  a command would continue to confuse Gaia inquiry review with the real
+  research workflow parity target.
+- Report workflow parity must move Gaia main's landscape, field-map, focus,
+  assessment, materialization-decision, and report orchestration implementation
+  into `gaia-research`; Gaia core should keep primitives and handoff stubs, not
+  hidden orchestration ownership.
+- In this repo, run tests as `uv run python -m pytest ...` after
+  `uv sync --extra dev`; before syncing dev dependencies, `uv run pytest`
+  resolved to an external pytest entry point.
+- The first real migration slice moved Gaia main's `gaia.engine.research`
+  package and its deterministic tests into `gaia-research`, with internal
+  imports rewritten to `gaia_research`. Gaia core primitive imports remain
+  allowed; `gaia.engine.research` imports are forbidden by source-boundary
+  tests.
+- CLI ownership is now oriented around `gaia-research run <workspace>
+  --topic ... --profile fast --json` and the same command through plugin
+  handoff. `render --artifact` is retained for deterministic Markdown rendering
+  of existing artifacts. `review` and `report` commands are intentionally not
+  registered.
+- Live verifier showed `litellm` is a runtime dependency, not a temporary test
+  helper. The standalone package must declare it so `uv run gaia-research run
+  ... --analysis-provider litellm` works without `uv run --with litellm`.
+- Gaia main's local `.env` uses `LITELLM_PROXY_API_BASE` as a full
+  `/chat/completions` endpoint. `gaia-research` normalizes that value to the
+  LiteLLM `api_base` root and passes the matching proxy key explicitly; otherwise
+  the migrated provider either falls back to the internal OpenAI gateway and
+  gets 403, or double-appends the chat-completions endpoint and gets 404.
+- The live LKM verifier should use `--reasoning-only` for end-to-end report
+  runs. `--all-lkm-results` is useful for broad exploration, but it can admit
+  claims without supporting reasoning; deep chain materialization then fails
+  before report writing.
+- LLM assessment output can still invent source ids even with a strict prompt.
+  The validator must remain strict, but the live LLM orchestration path now
+  performs a narrow repair pass that drops ungrounded assessment relations before
+  strict validation. This preserves grounded artifacts without weakening manual
+  or file-provider schema checks.
+- The live run completed the fast report artifact in 168.65 seconds, but its
+  `stop.json` still recommended `expand_focus` with `should_stop=false`. For
+  this migration PR that proves the migrated workflow can produce the expected
+  artifacts end to end; report quality gates and stop-verdict presentation are
+  intentionally deferred to a separate quality/flow task.
+
+Current cross-repo PR chain:
+
+- `gaia-research` report workflow parity PR:
+  https://github.com/SiliconEinstein/gaia-research/pull/18
+- Gaia core handoff PR:
+  https://github.com/SiliconEinstein/Gaia/pull/774
+- Gaia core cleanup PR:
+  https://github.com/SiliconEinstein/Gaia/pull/775
+
+Acceptance gaps remaining outside this `gaia-research` migration branch:
+
+- Merge #18 so the standalone package owns the active report workflow parity
+  implementation and prior-art archive.
+- Merge Gaia #774 so root `gaia research` is handed off to the external plugin
+  while Gaia core keeps primitives (`gaia search lkm`, `gaia add`,
+  `gaia inquiry`, `gaia author`, package ops).
+- Retarget Gaia #775 from the stacked handoff branch to `main` after #774 lands,
+  then let automatic PR CI attach to the cleanup PR before merge. The stacked
+  branch has already passed manual workflow-dispatch CI.
+- Verify the installed-package path for `gaia research run ...` end to end after
+  the Gaia core handoff lands. The current wheel smoke verifies the plugin entry
+  point and `gaia research doctor`, while the live report verifier uses the
+  standalone `gaia-research run ...` command.
+- Decide whether the live fast-report verifier should remain a documented manual
+  command or become an opt-in script. It should stay outside normal CI because it
+  uses real LKM and LLM services.
+
+Verifier:
+
+- `rg "Research Workflow Parity Acceptance|gaia-research run|gaia research run|3-5 minutes|primitive-excluded" docs README.md AGENTS.md`
+- `rg "gaia research run|render --artifact|gaia-lkm-explore turn|primitive-excluded|652aa11|Fast Report Acceptance Path" docs/specs docs/plans docs/foundations`
+- `git diff --check`
+- `uv sync --extra dev`
+- `uv run python -m pytest -q tests/test_workflow_state.py`
+- `uv run ruff check src/gaia_research/workflow_state.py tests/test_workflow_state.py`
+- `uv run mypy src/gaia_research/workflow_state.py`
+- `uv run python -m pytest -q tests/test_cli_status.py tests/test_cli_plugin.py tests/test_core_contract.py tests/test_source_boundary.py tests/test_installed_wheel_smoke.py tests/test_workflow_state.py`
+- `uv run python -m pytest -q`
+- `uv run ruff check src tests`
+- `uv run mypy src tests`
+- `uv build --wheel --out-dir dist`
+- `scripts/smoke_installed_wheel.sh`
+- `uv add litellm`
+- `uv run python -c "import litellm; print('litellm-ok')"`
+- `uv run pytest tests/test_research_assessment.py tests/test_research_providers.py -q`
+- `uv run gaia pkg scaffold --target /private/tmp/aspirin-live-20260613-01-gaia
+  --name aspirin-live-20260613-01-gaia --docstring "Live Gaia Research smoke
+  package." --no-check --json`
+- `uv run gaia-research run /private/tmp/aspirin-live-20260613-01-gaia --topic
+  "aspirin primary prevention cardiovascular disease" --profile fast --run-id
+  aspirin-live-fast-7 --env-file .env.local --query "aspirin primary prevention
+  cardiovascular disease trial bleeding mortality" --search-limit 5
+  --reasoning-only --analysis-provider litellm --model openai/deepseek-chat
+  --json` -> completed in 168.65 seconds, produced 61 events and
+  `trace/final_report.md`.
+
+Latest verifier snapshot:
+
+- `uv run python -m pytest -q` -> 74 passed.
+- `uv run ruff check .` -> passed; `docs/prior-art` is excluded from Ruff
+  because it is reference-only archived code.
+- `uv run ruff format --check .` -> passed.
+- `uv run mypy src tests` -> passed.
+- `uv build --wheel --out-dir dist` -> built
+  `dist/gaia_research-0.1.0-py3-none-any.whl`.
+- `scripts/smoke_installed_wheel.sh` -> passed; installed
+  `gaia-research` plus `litellm`, verified the plugin entry point, and ran
+  `gaia research doctor` through the installed Gaia CLI.
+- Gaia #775 cleanup mapping verifier -> 83 deleted files, 0 missing
+  migration/prior-art targets, 0 exact prior-art mismatches.
+- Gaia #775 manual stacked-branch CI ->
+  https://github.com/SiliconEinstein/Gaia/actions/runs/27462537939 completed
+  successfully.
+
+Prior-art archive snapshot:
+
+- `docs/prior-art/lkm-explorer/` preserves the retired Gaia core
+  `gaia-lkm-explore` package and tests as reference material for future
+  graph-session work.
+- `docs/prior-art/skills/` preserves `gaia-research-loop`,
+  `gaia-evidence-subgraph`, and `gaia-scholarly-synthesis` as design input, not
+  installed skills.
+- `docs/prior-art/starmap/` preserves a visualization reference; active
+  `gaia inspect starmap` remains in Gaia core as a package graph primitive.

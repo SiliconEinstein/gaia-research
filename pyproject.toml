@@ -12,6 +12,7 @@ license = "MIT"
 authors = [{ name = "SiliconEinstein" }]
 dependencies = [
   "gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@main",
+  "litellm>=1.88.1",
 ]
 
 [project.optional-dependencies]
@@ -36,11 +37,19 @@ allow-direct-references = true
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["docs/prior-art"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 packages = ["gaia_research"]
+
+[[tool.mypy.overrides]]
+module = ["gaia.*"]
+ignore_missing_imports = true

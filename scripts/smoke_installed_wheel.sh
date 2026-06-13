@@ -56,15 +56,6 @@ set -e
 
 if [[ "${gaia_plugin_loader_status}" -eq 0 ]]; then
   "${tmp_dir}/venv/bin/gaia" research doctor
-  if [[ -n "${GAIA_REVIEW_PACKAGE:-}" ]]; then
-    "${tmp_dir}/venv/bin/gaia" research review \
-      --path "${GAIA_REVIEW_PACKAGE}" \
-      --topic "${GAIA_REVIEW_TOPIC:-smoke}" \
-      --profile "${GAIA_REVIEW_PROFILE:-quick}" \
-      --run-id "${GAIA_REVIEW_RUN_ID:-gaia-cli-review-smoke}" \
-      --no-infer \
-      --json
-  fi
 elif [[ "${gaia_plugin_loader_status}" -eq 42 ]]; then
   if [[ "${GAIA_REQUIRE_RESEARCH_HANDOFF:-}" == "1" ]]; then
     echo "installed Gaia core lacks research plugin handoff" >&2
