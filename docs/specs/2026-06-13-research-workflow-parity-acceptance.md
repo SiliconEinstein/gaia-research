@@ -67,9 +67,8 @@ intentional replacement.
 The primary end-to-end command must support a flow equivalent to:
 
 ```bash
-gaia-research report \
+gaia-research run ./runs/aspirin-fast-report \
   --topic "aspirin primary prevention cardiovascular disease" \
-  --workspace ./runs/aspirin-fast-report \
   --profile fast \
   --json
 ```
@@ -83,9 +82,8 @@ After installing Gaia core and `gaia-research` together, Gaia CLI must be able
 to discover and run the external research workflow:
 
 ```bash
-gaia research report \
+gaia research run ./runs/aspirin-fast-report \
   --topic "aspirin primary prevention cardiovascular disease" \
-  --workspace ./runs/aspirin-fast-report \
   --profile fast \
   --json
 ```
@@ -182,7 +180,7 @@ Completion requires all of the following evidence:
 - parity matrix document;
 - `gaia-research` engine tests for deterministic workflow stages;
 - `gaia-research` standalone CLI tests;
-- Gaia plugin/handoff tests for `gaia research report`;
+- Gaia plugin/handoff tests for `gaia research run`;
 - source-boundary tests proving Gaia core does not import `gaia_research`;
 - cross-repo installed-wheel smoke for Gaia core plus `gaia-research`;
 - fast report smoke from topic/query to final report;
@@ -214,7 +212,7 @@ Acceptance:
 1. Inventory all existing Gaia-main upper research commands and workflows into a
    parity matrix, excluding gaia search lkm as a primitive.
 2. Reproduce the ported surfaces in gaia-research CLI.
-3. Make gaia research report discover and run gaia-research through package
+3. Make gaia research run discover and run gaia-research through package
    plugin/handoff installation.
 4. Prove a topic/query can complete a fast end-to-end report workflow in about
    3-5 minutes.

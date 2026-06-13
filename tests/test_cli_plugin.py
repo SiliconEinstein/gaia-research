@@ -36,6 +36,18 @@ def test_plugin_review_command_is_not_registered() -> None:
     assert "No such command" in result.output
 
 
+def test_plugin_report_command_is_not_registered() -> None:
+    from gaia_research import plugin
+
+    root_app = typer.Typer(name="gaia")
+    plugin.register(root_app)
+
+    result = CliRunner().invoke(root_app, ["research", "report"])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
 def test_plugin_status_command_reads_report_workflow_state(tmp_path: Path) -> None:
     from gaia_research import plugin
 

@@ -60,9 +60,11 @@ but they are not acceptance criteria for this milestone.
   later, Gaia core LKM search primitive calls.
 - Create `src/gaia_research/report.py`: final report assembly over research
   artifacts.
-- Modify `src/gaia_research/cli.py`: add primary `report` command.
-- Modify `src/gaia_research/plugin.py`: expose `gaia research report`.
-- Modify `README.md`: update examples from `review` to `report`.
+- Modify `src/gaia_research/cli.py`: expose `run` as the primary workflow
+  command and `render --artifact` as the deterministic artifact renderer.
+- Modify `src/gaia_research/plugin.py`: expose `gaia research run`.
+- Modify `README.md`: update examples from `review`/`report` to `run` and
+  `render --artifact`.
 - Modify `AGENTS.md`: keep the same-PR foundations update rule current.
 - Create `tests/test_workflow_state.py`: state path and resume contract tests.
 - Create `tests/test_landscape.py`: deterministic LKM payload aggregation tests.
@@ -70,8 +72,9 @@ but they are not acceptance criteria for this milestone.
   artifact tests.
 - Create `tests/test_report_workflow.py`: end-to-end topic-to-report workflow
   tests with stubbed LKM inputs.
-- Create `tests/test_cli_report.py`: report-command tests.
-- Modify `tests/test_cli_plugin.py`: add `gaia research report` plugin tests.
+- Create or modify CLI tests for `run --json`, `render --artifact`, and the
+  absence of a separate `report` command.
+- Modify `tests/test_cli_plugin.py`: add `gaia research run` plugin tests.
 - Modify `tests/test_source_boundary.py`: keep Gaia core imports behind declared
   dynamic surfaces or subprocess adapters.
 
@@ -103,7 +106,7 @@ but they are not acceptance criteria for this milestone.
   `.gaia/research/runs/<run-id>/`.
 
   The CLI must be a thin adapter over the engine API. Product calls, agent
-  skills, standalone CLI calls, and `gaia research report` must all call the
+  skills, standalone CLI calls, and `gaia research run` must all call the
   same workflow implementation.
   ```
 
@@ -441,7 +444,7 @@ but they are not acceptance criteria for this milestone.
 **Files:**
 - Modify: `src/gaia_research/cli.py`
 - Modify: `src/gaia_research/plugin.py`
-- Create: `tests/test_cli_report.py`
+- Modify: `tests/test_cli_status.py`
 - Modify: `tests/test_cli_plugin.py`
 - Modify: `README.md`
 
@@ -450,13 +453,13 @@ but they are not acceptance criteria for this milestone.
   Standalone CLI tests must call:
 
   ```bash
-  gaia-research report --topic dqcp --workspace <tmp> --run-id cli-run --json
+  gaia-research run <tmp> --topic dqcp --run-id cli-run --json
   ```
 
   Plugin tests must call:
 
   ```bash
-  gaia research report --topic dqcp --workspace <tmp> --run-id plugin-run --json
+  gaia research run <tmp> --topic dqcp --run-id plugin-run --json
   ```
 
   The JSON payload must include `run_id`, `status`, `phase`, `run_dir`,
@@ -465,25 +468,28 @@ but they are not acceptance criteria for this milestone.
 - [ ] **Step 2: Run failing CLI tests**
 
   ```bash
-  uv run pytest -q tests/test_cli_report.py tests/test_cli_plugin.py
+  uv run pytest -q tests/test_cli_status.py tests/test_cli_plugin.py
   ```
 
-  Expected: FAIL because the report command does not exist yet.
+  Expected: FAIL before `run --json` and `render --artifact` are wired.
 
-- [ ] **Step 3: Add `report`**
+- [ ] **Step 3: Wire `run` and `render`**
 
-  Add `report` as the primary command. Do not restore `review`; it was an
-  inquiry review bridge and is not part of research workflow parity.
+  Keep `run` as the primary command. Add machine-readable `run --json` summary
+  output and expose `render --artifact` as the deterministic artifact renderer.
+  Do not restore `review`; it was an inquiry review bridge and is not part of
+  research workflow parity. Do not add a separate `report` command for the same
+  orchestration.
 
 - [ ] **Step 4: Update README examples**
 
-  Replace primary examples with `gaia-research report` and
-  `gaia research report`.
+  Replace primary examples with `gaia-research run` and
+  `gaia research run`.
 
 - [ ] **Step 5: Run CLI tests**
 
   ```bash
-  uv run pytest -q tests/test_cli_report.py tests/test_cli_plugin.py
+  uv run pytest -q tests/test_cli_status.py tests/test_cli_plugin.py
   ```
 
   Expected: PASS.
@@ -491,8 +497,8 @@ but they are not acceptance criteria for this milestone.
 - [ ] **Step 6: Commit**
 
   ```bash
-  git add src/gaia_research/cli.py src/gaia_research/plugin.py tests/test_cli_report.py tests/test_cli_plugin.py README.md
-  git commit -m "feat: expose report workflow commands"
+  git add src/gaia_research/cli.py src/gaia_research/plugin.py tests/test_cli_status.py tests/test_cli_plugin.py README.md
+  git commit -m "feat: expose research run workflow commands"
   ```
 
 ## Task 7: Gaia-Core Deprecation PR
@@ -518,14 +524,14 @@ but they are not acceptance criteria for this milestone.
   Add tests that assert:
 
   - `gaia search lkm` remains available;
-  - `gaia research report` is served through the installed plugin;
+  - `gaia research run` is served through the installed plugin;
   - `gaia-lkm-explore --help` shows deprecation text or is removed only after
     replacement parity exists.
 
 - [ ] **Step 3: Implement deprecation/handoff**
 
   Keep Gaia core as primitive owner. Make upper workflow help text point to
-  `gaia-research report` and `gaia research report`.
+  `gaia-research run` and `gaia research run`.
 
 - [ ] **Step 4: Run Gaia-core gates**
 
@@ -555,8 +561,8 @@ but they are not acceptance criteria for this milestone.
   The script must:
 
   - install Gaia core and `gaia-research`;
-  - run `gaia-research report --json` against a fixture workspace;
-  - run `gaia research report --json` through Gaia plugin handoff;
+  - run `gaia-research run <fixture-workspace> --json` against a fixture workspace;
+  - run `gaia research run <fixture-workspace> --json` through Gaia plugin handoff;
   - verify artifact existence for landscape, field map, focuses, assessment
     gate, materialization decision, and report;
   - fail if output uses hidden Gaia-core upper workflow implementation paths.
@@ -598,8 +604,8 @@ uv run pytest -q -m "pr_gate and not slow"
 
 Completion evidence:
 
-- `gaia-research report --topic ...` works from a clean install.
-- `gaia research report --topic ...` works through Gaia plugin handoff.
+- `gaia-research run <workspace> --topic ...` works from a clean install.
+- `gaia research run <workspace> --topic ...` works through Gaia plugin handoff.
 - Gaia core no longer owns upper report workflow execution.
 - `gaia-lkm-explore` is deprecated or removed as a canonical product workflow
   surface.

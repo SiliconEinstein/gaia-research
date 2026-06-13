@@ -68,7 +68,7 @@ research workflow.
 | `gaia research status <pkg>` | `ported` | `gaia-research status <workspace-or-pkg>` and plugin handoff | Initialize/read research manifest or run state and show focus, mode, obligations, and actionable next commands. |
 | `gaia research trace record` | `ported` | `gaia-research trace record` and plugin handoff | Append timing/provider/search/external trace records for benchmark and audit output. |
 | `gaia research trace summarize` | `ported` | `gaia-research trace summarize` and plugin handoff | Rebuild benchmark summary from trace records. |
-| `gaia research run --topic ...` | `ported` | `gaia-research report --topic ...` and `gaia research report --topic ...` | Primary end-to-end fast report path: topic/query to landscape, field map, focus, assessment, materialization decision, and final report. |
+| `gaia research run --topic ...` | `ported` | `gaia-research run <workspace> --topic ...` and `gaia research run <workspace> --topic ...` | Primary end-to-end fast report path: topic/query to landscape, field map, focus, assessment, materialization decision, and final report. |
 | `gaia research explore --mode scan` | `ported` | `gaia-research explore --mode scan` and plugin handoff | Consume saved or live LKM search payloads, write landscape artifacts, shallow source/package sync decisions, hypotheses, and obligations. |
 | `gaia research explore --mode expand` | `ported` | `gaia-research explore --mode expand` and plugin handoff | Target expansion around a focus or obligation using saved or live LKM search payloads. |
 | `gaia research expand` | `deprecated-alias` | Alias to `gaia-research explore --mode expand` | Preserve old short command while making `explore --mode expand` the shared engine path. |
@@ -76,7 +76,7 @@ research workflow.
 | `gaia research assess` | `ported` | `gaia-research assess` and plugin handoff | Assess one focus against selected evidence, optionally deep-materialize selected papers/chains, write assessment artifacts, notes, obligations, hypotheses, and candidate relations. |
 | `gaia research propose` | `ported` | `gaia-research propose` and plugin handoff | Turn an assessment into proposed next research questions; with accept flag, write accepted questions and inquiry state. |
 | `gaia research promote` | `ported` | `gaia-research promote` and plugin handoff | Record explicit materialization decisions/links from scaffold to formal records. |
-| `gaia research report --artifact ...` | `deprecated-alias` | `gaia-research render --artifact ...`; compatibility alias allowed | Render an existing research artifact to Markdown. The primary `report` command is reserved for topic-to-report workflow. |
+| `gaia research report --artifact ...` | `removed-after-parity` | `gaia-research render --artifact ...` and `gaia research render --artifact ...` | Render an existing research artifact to Markdown with the deterministic renderer. This does not call an LLM and is not the primary workflow. |
 | `gaia research stop` | `ported` | `gaia-research stop` and plugin handoff | Evaluate stop criteria from focus, assessment, and landscape artifacts. |
 
 ## `gaia-lkm-explore ...` Surfaces
@@ -107,9 +107,8 @@ The fast product path must be verified independently of individual atomic
 commands:
 
 ```bash
-gaia-research report \
+gaia-research run "<workspace>" \
   --topic "<query>" \
-  --workspace "<workspace>" \
   --profile fast \
   --json
 ```
@@ -117,9 +116,8 @@ gaia-research report \
 and through Gaia plugin handoff:
 
 ```bash
-gaia research report \
+gaia research run "<workspace>" \
   --topic "<query>" \
-  --workspace "<workspace>" \
   --profile fast \
   --json
 ```
@@ -149,14 +147,15 @@ Expected verifier output:
 
 ## Current Implementation Gap Summary
 
-As of this matrix, `gaia-research` has removed the misaligned `review` bridge
-and now has report workflow state/status foundations under
-`.gaia/research/runs/<run-id>/`. It does not yet satisfy this parity matrix.
+As of the current branch, `gaia-research` has removed the misaligned `review`
+bridge, migrated Gaia main's deterministic `gaia.engine.research` implementation
+into `gaia_research`, and exposed `run --json` plus `render --artifact`.
 
-The next implementation work should therefore start with:
+Remaining parity work:
 
-1. porting the deterministic state/artifact contracts into `gaia-research`;
-2. adding `report` as the primary end-to-end command;
-3. mapping old `run`, `report --artifact`, and `gaia-lkm-explore` aliases to
-   the new commands only after equivalent behavior exists;
-4. adding cross-repo installed-wheel and fast-report smoke verifiers.
+1. complete cross-repo Gaia core handoff/deprecation so Gaia core no longer owns
+   upper research orchestration;
+2. add installed-wheel and fast-report smoke verifiers for `gaia-research run`
+   and `gaia research run`;
+3. keep `gaia-lkm-explore` aliases out of the report milestone until equivalent
+   report behavior exists or the graph-session milestone starts.
