@@ -393,6 +393,32 @@ def test_assessment_grounding_rejects_unknown_item_ref() -> None:
         )
 
 
+def test_assessment_from_analysis_can_repair_ungrounded_llm_relations() -> None:
+    artifact = build_assessment_from_analysis(
+        focus={"kind": "focus", "id": "elderly_net_benefit"},
+        landscapes=[_landscape()],
+        analysis={
+            "relations": [
+                _relation(
+                    claim="Grounded relation is preserved.",
+                    source_refs=[{"kind": "variable", "id": "aspree_variable"}],
+                ),
+                _relation(
+                    claim="Ungrounded relation is discarded.",
+                    source_refs=[{"kind": "variable", "id": "elderly_net_benefit"}],
+                ),
+            ],
+            "candidate_obligations": [],
+        },
+        repair_grounding=True,
+    )
+
+    assert [relation["claim"] for relation in artifact["relations"]] == [
+        "Grounded relation is preserved."
+    ]
+    assert validate_assessment_grounding(artifact) is artifact
+
+
 def test_assessment_review_requires_summary() -> None:
     artifact = build_assessment_artifact(
         focus={"kind": "focus", "id": "focus_1"},

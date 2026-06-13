@@ -497,6 +497,80 @@ def _validate_claim_refs(
             )
 
 
+def _source_ref_is_grounded(
+    ref_payload: Any,
+    *,
+    valid_ids: dict[str, set[str]],
+) -> bool:
+    if not isinstance(ref_payload, dict):
+        return False
+    kind = ref_payload.get("kind")
+    ref_id = ref_payload.get("id")
+    return (
+        isinstance(kind, str)
+        and isinstance(ref_id, str)
+        and kind in valid_ids
+        and ref_id in valid_ids[kind]
+    )
+
+
+def _repair_claim_refs(
+    claim_refs: Any,
+    *,
+    package_ref_value_types: dict[str, str],
+) -> list[str] | None:
+    if not isinstance(claim_refs, list):
+        return None
+    repaired: list[str] = []
+    for ref in claim_refs:
+        if not isinstance(ref, str) or not ref:
+            continue
+        if ":" not in ref:
+            repaired.append(ref)
+            continue
+        if package_ref_value_types.get(ref) == "claim":
+            repaired.append(ref)
+    return repaired
+
+
+def _repair_grounded_relations(
+    relations: list[Any],
+    *,
+    evidence_packet: dict[str, Any],
+    focus: dict[str, Any],
+) -> list[dict[str, Any]]:
+    valid_ids = _valid_grounding_ids(evidence_packet, focus=focus)
+    package_ref_value_types = _package_ref_value_types(evidence_packet)
+    repaired_relations: list[dict[str, Any]] = []
+    for relation in relations:
+        if not isinstance(relation, dict):
+            continue
+        repaired = dict(relation)
+        source_refs = relation.get("source_refs", [])
+        if not isinstance(source_refs, list):
+            continue
+        grounded_refs = [
+            dict(ref)
+            for ref in source_refs
+            if _source_ref_is_grounded(ref, valid_ids=valid_ids)
+        ]
+        if not grounded_refs:
+            continue
+        repaired["source_refs"] = grounded_refs
+        if "claim_refs" in repaired:
+            repaired["claim_refs"] = _repair_claim_refs(
+                repaired.get("claim_refs"),
+                package_ref_value_types=package_ref_value_types,
+            )
+        elif "claims" in repaired:
+            repaired["claims"] = _repair_claim_refs(
+                repaired.get("claims"),
+                package_ref_value_types=package_ref_value_types,
+            )
+        repaired_relations.append(repaired)
+    return repaired_relations
+
+
 def validate_assessment_grounding(artifact: dict[str, Any]) -> dict[str, Any]:
     """Validate that relation refs resolve inside the assessment evidence packet."""
     evidence_packet = _require_dict(artifact.get("evidence_packet"), "evidence_packet")
@@ -529,6 +603,7 @@ def build_assessment_from_analysis(
     analysis: dict[str, Any],
     evidence_packet: dict[str, Any] | None = None,
     strict_grounding: bool = True,
+    repair_grounding: bool = False,
 ) -> dict[str, Any]:
     """Build an assessment artifact from agent/LLM analysis and landscapes."""
     evidence_packet = (
@@ -551,6 +626,12 @@ def build_assessment_from_analysis(
     next_queries = analysis.get("next_queries", [])
     if not isinstance(next_queries, list):
         raise AssessmentSchemaError("analysis.next_queries must be a list")
+    if repair_grounding:
+        relations = _repair_grounded_relations(
+            relations,
+            evidence_packet=evidence_packet,
+            focus=focus,
+        )
 
     artifact = build_assessment_artifact(
         focus=focus,

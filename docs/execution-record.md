@@ -560,6 +560,44 @@ Learning:
   handoff. `render --artifact` is retained for deterministic Markdown rendering
   of existing artifacts. `review` and `report` commands are intentionally not
   registered.
+- Live verifier showed `litellm` is a runtime dependency, not a temporary test
+  helper. The standalone package must declare it so `uv run gaia-research run
+  ... --analysis-provider litellm` works without `uv run --with litellm`.
+- Gaia main's local `.env` uses `LITELLM_PROXY_API_BASE` as a full
+  `/chat/completions` endpoint. `gaia-research` normalizes that value to the
+  LiteLLM `api_base` root and passes the matching proxy key explicitly; otherwise
+  the migrated provider either falls back to the internal OpenAI gateway and
+  gets 403, or double-appends the chat-completions endpoint and gets 404.
+- The live LKM verifier should use `--reasoning-only` for end-to-end report
+  runs. `--all-lkm-results` is useful for broad exploration, but it can admit
+  claims without supporting reasoning; deep chain materialization then fails
+  before report writing.
+- LLM assessment output can still invent source ids even with a strict prompt.
+  The validator must remain strict, but the live LLM orchestration path now
+  performs a narrow repair pass that drops ungrounded assessment relations before
+  strict validation. This preserves grounded artifacts without weakening manual
+  or file-provider schema checks.
+- The live run completed the fast report artifact in 168.65 seconds, but its
+  `stop.json` still recommended `expand_focus` with `should_stop=false`. For
+  this migration PR that proves the migrated workflow can produce the expected
+  artifacts end to end; report quality gates and stop-verdict presentation are
+  intentionally deferred to a separate quality/flow task.
+
+Acceptance gaps remaining outside this `gaia-research` migration branch:
+
+- Open or update the actual GitHub PR for branch
+  `codex/report-workflow-parity-plan`; no PR is currently associated with the
+  branch in this checkout.
+- Add the Gaia core companion change that hands off/deprecates old upper
+  `gaia research` workflow surfaces while keeping Gaia primitives (`gaia search
+  lkm`, `gaia add`, `gaia inquiry`, `gaia author`, package ops) in Gaia core.
+- Verify the installed-package path for `gaia research run ...` end to end after
+  the Gaia core handoff lands. The current wheel smoke verifies the plugin entry
+  point and `gaia research doctor`, while the live report verifier uses the
+  standalone `gaia-research run ...` command.
+- Decide whether the live fast-report verifier should remain a documented manual
+  command or become an opt-in script. It should stay outside normal CI because it
+  uses real LKM and LLM services.
 
 Verifier:
 
@@ -576,9 +614,27 @@ Verifier:
 - `uv run mypy src tests`
 - `uv build --wheel --out-dir dist`
 - `scripts/smoke_installed_wheel.sh`
+- `uv add litellm`
+- `uv run python -c "import litellm; print('litellm-ok')"`
+- `uv run pytest tests/test_research_assessment.py tests/test_research_providers.py -q`
+- `uv run gaia pkg scaffold --target /private/tmp/aspirin-live-20260613-01-gaia
+  --name aspirin-live-20260613-01-gaia --docstring "Live Gaia Research smoke
+  package." --no-check --json`
+- `uv run gaia-research run /private/tmp/aspirin-live-20260613-01-gaia --topic
+  "aspirin primary prevention cardiovascular disease" --profile fast --run-id
+  aspirin-live-fast-7 --env-file .env.local --query "aspirin primary prevention
+  cardiovascular disease trial bleeding mortality" --search-limit 5
+  --reasoning-only --analysis-provider litellm --model openai/deepseek-chat
+  --json` -> completed in 168.65 seconds, produced 61 events and
+  `trace/final_report.md`.
 
 Latest verifier snapshot:
 
-- `uv run python -m pytest -q` -> 72 passed.
+- `uv run python -m pytest -q` -> 74 passed.
 - `uv run ruff check src tests` -> passed.
 - `uv run mypy src tests` -> passed.
+- `uv build --wheel --out-dir dist` -> built
+  `dist/gaia_research-0.1.0-py3-none-any.whl`.
+- `scripts/smoke_installed_wheel.sh` -> passed; installed
+  `gaia-research` plus `litellm`, verified the plugin entry point, and ran
+  `gaia research doctor` through the installed Gaia CLI.

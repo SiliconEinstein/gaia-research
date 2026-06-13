@@ -12,6 +12,7 @@ license = "MIT"
 authors = [{ name = "SiliconEinstein" }]
 dependencies = [
   "gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@main",
+  "litellm>=1.88.1",
 ]
 
 [project.optional-dependencies]

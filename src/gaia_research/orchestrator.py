@@ -1280,6 +1280,7 @@ def _run_assessment_for_focus(
                 else None
             ),
             strict_grounding=True,
+            repair_grounding=analysis_provider == "litellm",
         )
     except AssessmentSchemaError as exc:
         runtime.update_run_state(

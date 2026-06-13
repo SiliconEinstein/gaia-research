@@ -477,9 +477,35 @@ async def _litellm_completion(
         "max_retries": max_retries,
         "response_format": {"type": "json_object"},
     }
+    kwargs.update(_litellm_env_kwargs())
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     return await litellm_runtime.acompletion(**kwargs)
+
+
+def _litellm_env_kwargs() -> dict[str, object]:
+    kwargs: dict[str, object] = {}
+    api_base = (
+        os.environ.get("GAIA_RESEARCH_LLM_API_BASE")
+        or os.environ.get("LITELLM_PROXY_API_BASE")
+    )
+    api_key = (
+        os.environ.get("GAIA_RESEARCH_LLM_API_KEY")
+        or os.environ.get("LITELLM_PROXY_API_KEY")
+    )
+    if api_base and api_base.strip():
+        kwargs["api_base"] = _normalize_litellm_api_base(api_base)
+    if api_key and api_key.strip():
+        kwargs["api_key"] = api_key.strip()
+    return kwargs
+
+
+def _normalize_litellm_api_base(api_base: str) -> str:
+    normalized = api_base.strip().rstrip("/")
+    suffix = "/chat/completions"
+    if normalized.endswith(suffix):
+        return normalized[: -len(suffix)].rstrip("/")
+    return normalized
 
 
 def _litellm_messages(
