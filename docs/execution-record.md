@@ -583,14 +583,25 @@ Learning:
   artifacts end to end; report quality gates and stop-verdict presentation are
   intentionally deferred to a separate quality/flow task.
 
+Current cross-repo PR chain:
+
+- `gaia-research` report workflow parity PR:
+  https://github.com/SiliconEinstein/gaia-research/pull/18
+- Gaia core handoff PR:
+  https://github.com/SiliconEinstein/Gaia/pull/774
+- Gaia core cleanup PR:
+  https://github.com/SiliconEinstein/Gaia/pull/775
+
 Acceptance gaps remaining outside this `gaia-research` migration branch:
 
-- Open or update the actual GitHub PR for branch
-  `codex/report-workflow-parity-plan`; no PR is currently associated with the
-  branch in this checkout.
-- Add the Gaia core companion change that hands off/deprecates old upper
-  `gaia research` workflow surfaces while keeping Gaia primitives (`gaia search
-  lkm`, `gaia add`, `gaia inquiry`, `gaia author`, package ops) in Gaia core.
+- Merge #18 so the standalone package owns the active report workflow parity
+  implementation and prior-art archive.
+- Merge Gaia #774 so root `gaia research` is handed off to the external plugin
+  while Gaia core keeps primitives (`gaia search lkm`, `gaia add`,
+  `gaia inquiry`, `gaia author`, package ops).
+- Retarget Gaia #775 from the stacked handoff branch to `main` after #774 lands,
+  then let automatic PR CI attach to the cleanup PR before merge. The stacked
+  branch has already passed manual workflow-dispatch CI.
 - Verify the installed-package path for `gaia research run ...` end to end after
   the Gaia core handoff lands. The current wheel smoke verifies the plugin entry
   point and `gaia research doctor`, while the live report verifier uses the
@@ -631,10 +642,28 @@ Verifier:
 Latest verifier snapshot:
 
 - `uv run python -m pytest -q` -> 74 passed.
-- `uv run ruff check src tests` -> passed.
+- `uv run ruff check .` -> passed; `docs/prior-art` is excluded from Ruff
+  because it is reference-only archived code.
+- `uv run ruff format --check .` -> passed.
 - `uv run mypy src tests` -> passed.
 - `uv build --wheel --out-dir dist` -> built
   `dist/gaia_research-0.1.0-py3-none-any.whl`.
 - `scripts/smoke_installed_wheel.sh` -> passed; installed
   `gaia-research` plus `litellm`, verified the plugin entry point, and ran
   `gaia research doctor` through the installed Gaia CLI.
+- Gaia #775 cleanup mapping verifier -> 83 deleted files, 0 missing
+  migration/prior-art targets, 0 exact prior-art mismatches.
+- Gaia #775 manual stacked-branch CI ->
+  https://github.com/SiliconEinstein/Gaia/actions/runs/27462537939 completed
+  successfully.
+
+Prior-art archive snapshot:
+
+- `docs/prior-art/lkm-explorer/` preserves the retired Gaia core
+  `gaia-lkm-explore` package and tests as reference material for future
+  graph-session work.
+- `docs/prior-art/skills/` preserves `gaia-research-loop`,
+  `gaia-evidence-subgraph`, and `gaia-scholarly-synthesis` as design input, not
+  installed skills.
+- `docs/prior-art/starmap/` preserves a visualization reference; active
+  `gaia inspect starmap` remains in Gaia core as a package graph primitive.
