@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from gaia_research.contracts import assess_contract, field_map_contract
+from gaia_research.contracts import assess_contract, field_map_contract, query_plan_contract
 
 
 def test_field_map_contract_describes_autonomous_review_taxonomy() -> None:
@@ -16,6 +16,16 @@ def test_field_map_contract_describes_autonomous_review_taxonomy() -> None:
     assert "recommended_expansions" in contract["output_required_fields"]
     assert "Do not rely on review articles being present" in payload
     assert "field taxonomy" in payload
+
+
+def test_query_plan_contract_documents_checkpoint_response_shape() -> None:
+    contract = query_plan_contract(language="zh")
+    payload = json.dumps(contract, ensure_ascii=False)
+
+    assert contract["contract"] == "gaia.research.query_plan"
+    assert "queries" in contract["response_required_fields"]
+    assert "query_plan.response.json" in payload
+    assert "default_action" in payload
 
 
 def test_assess_contract_forbids_workflow_terms_in_structured_prose() -> None:

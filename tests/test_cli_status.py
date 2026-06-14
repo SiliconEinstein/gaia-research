@@ -148,6 +148,156 @@ def test_run_command_accepts_topic_workspace_and_fast_profile(
     assert payload["topic"] == "aspirin primary prevention"
 
 
+def test_run_command_resumes_query_plan_with_default_topic_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = _write_research_package(tmp_path / "workspace")
+    captured: dict[str, object] = {}
+    search_json = tmp_path / "search.json"
+    search_json.write_text('{"items": []}\n', encoding="utf-8")
+
+    assert (
+        cli.main(
+            [
+                "run",
+                str(workspace),
+                "--topic",
+                "aspirin primary prevention",
+                "--profile",
+                "fast",
+                "--run-id",
+                "aspirin-fast",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    def fake_execute_live_searches(
+        *_args: object, queries: list[str], **_kwargs: object
+    ) -> list[str]:
+        captured["queries"] = list(queries)
+        return [str(search_json)]
+
+    def fake_execute_file_provider_run(*_args: object, **_kwargs: object) -> None:
+        captured["file_provider_called"] = True
+
+    monkeypatch.setattr(
+        "gaia_research.research_cli.execute_live_searches",
+        fake_execute_live_searches,
+    )
+    monkeypatch.setattr(
+        "gaia_research.research_cli.execute_file_provider_run",
+        fake_execute_file_provider_run,
+    )
+
+    assert (
+        cli.main(
+            [
+                "run",
+                str(workspace),
+                "--topic",
+                "aspirin primary prevention",
+                "--profile",
+                "fast",
+                "--run-id",
+                "aspirin-fast",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    assert captured == {
+        "queries": ["aspirin primary prevention"],
+        "file_provider_called": True,
+    }
+
+
+def test_run_command_resumes_query_plan_from_response_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = _write_research_package(tmp_path / "workspace")
+    captured: dict[str, object] = {}
+    search_json = tmp_path / "search.json"
+    search_json.write_text('{"items": []}\n', encoding="utf-8")
+
+    assert (
+        cli.main(
+            [
+                "run",
+                str(workspace),
+                "--topic",
+                "aspirin primary prevention",
+                "--profile",
+                "fast",
+                "--run-id",
+                "aspirin-fast",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    first = json.loads(capsys.readouterr().out)
+    response_path = Path(first["pending_checkpoint"]).with_name("query_plan.response.json")
+    response_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "checkpoint_id": "query_plan_001",
+                "action": "continue",
+                "queries": ["manual aspirin query"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_execute_live_searches(
+        *_args: object, queries: list[str], **_kwargs: object
+    ) -> list[str]:
+        captured["queries"] = list(queries)
+        return [str(search_json)]
+
+    def fake_execute_file_provider_run(*_args: object, **_kwargs: object) -> None:
+        captured["file_provider_called"] = True
+
+    monkeypatch.setattr(
+        "gaia_research.research_cli.execute_live_searches",
+        fake_execute_live_searches,
+    )
+    monkeypatch.setattr(
+        "gaia_research.research_cli.execute_file_provider_run",
+        fake_execute_file_provider_run,
+    )
+
+    assert (
+        cli.main(
+            [
+                "run",
+                str(workspace),
+                "--topic",
+                "aspirin primary prevention",
+                "--profile",
+                "fast",
+                "--run-id",
+                "aspirin-fast",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    assert captured == {
+        "queries": ["manual aspirin query"],
+        "file_provider_called": True,
+    }
+
+
 def test_render_command_renders_existing_artifact_without_llm(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

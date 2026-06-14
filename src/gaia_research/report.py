@@ -900,9 +900,122 @@ def render_final_research_report_markdown(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _render_research_landscape(artifact: dict[str, Any]) -> str:
+    lines = _heading("Research Landscape")
+    target = artifact.get("target") or artifact.get("topic")
+    if target:
+        lines.extend(["## Target", "", str(target), ""])
+    stats = artifact.get("stats")
+    if isinstance(stats, dict) and stats:
+        lines.extend(["## Stats", ""])
+        for key, value in stats.items():
+            lines.append(f"- {_cell(key)}: {_cell(value)}")
+        lines.append("")
+    queries = artifact.get("query_provenance")
+    if isinstance(queries, list) and queries:
+        lines.extend(["## Queries", ""])
+        for index, query in enumerate(queries, start=1):
+            if isinstance(query, dict):
+                query_text = query.get("query") or query.get("target") or query
+                lines.append(f"{index}. {_cell(query_text)}")
+            else:
+                lines.append(f"{index}. {_cell(query)}")
+        lines.append("")
+    paper_leads = artifact.get("paper_leads")
+    if isinstance(paper_leads, list) and paper_leads:
+        lines.extend(["## Paper Leads", "", "| Paper | Year | DOI |", "|---|---:|---|"])
+        for lead in paper_leads[:20]:
+            if not isinstance(lead, dict):
+                continue
+            paper = lead.get("title") or lead.get("paper_id") or lead.get("id") or ""
+            lines.append(
+                f"| {_cell(paper)} | {_cell(lead.get('year'))} | "
+                f"{_cell(lead.get('doi'))} |"
+            )
+        lines.append("")
+    items = artifact.get("items")
+    if isinstance(items, list) and items:
+        lines.extend(["## Evidence Items", ""])
+        for item in items[:20]:
+            if isinstance(item, dict):
+                item_id = item.get("item_id") or item.get("id") or item.get("paper_id") or ""
+                content = item.get("content") or item.get("title") or item.get("kind") or item
+                lines.append(f"- `{_cell(item_id)}` {_cell(content)}")
+            else:
+                lines.append(f"- {_cell(item)}")
+        lines.append("")
+    candidate_focuses = artifact.get("candidate_focuses")
+    if isinstance(candidate_focuses, list) and candidate_focuses:
+        lines.extend(["## Candidate Focuses", ""])
+        for focus in candidate_focuses:
+            if isinstance(focus, dict):
+                focus_id = focus.get("id") or focus.get("question") or focus
+                rationale = focus.get("rationale") or focus.get("question") or ""
+                lines.append(f"- `{_cell(focus_id)}` {_cell(rationale)}")
+            else:
+                lines.append(f"- {_cell(focus)}")
+        lines.append("")
+    notes = artifact.get("notes")
+    if isinstance(notes, list) and notes:
+        lines.extend(["## Notes", "", *_bullet_list(notes)])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_field_map(artifact: dict[str, Any]) -> str:
+    lines = _heading("Research Field Map")
+    thesis = artifact.get("domain_thesis")
+    if thesis:
+        lines.extend(["## Domain Thesis", "", str(thesis), ""])
+    buckets = artifact.get("buckets")
+    if isinstance(buckets, list) and buckets:
+        lines.extend(
+            [
+                "## Buckets",
+                "",
+                "| ID | Title | Role | Coverage | Recommended Queries |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for bucket in buckets:
+            if not isinstance(bucket, dict):
+                continue
+            lines.append(
+                "| "
+                f"{_cell(bucket.get('id'))} | "
+                f"{_cell(bucket.get('title'))} | "
+                f"{_cell(bucket.get('role'))} | "
+                f"{_cell(bucket.get('coverage_status'))} | "
+                f"{_json_cell(bucket.get('recommended_queries'))} |"
+            )
+        lines.append("")
+    axes = artifact.get("controversy_axes")
+    if isinstance(axes, list) and axes:
+        lines.extend(["## Controversy Axes", "", *_bullet_list(axes)])
+    gaps = artifact.get("coverage_gaps")
+    if isinstance(gaps, list) and gaps:
+        lines.extend(["## Coverage Gaps", ""])
+        for gap in gaps:
+            if isinstance(gap, dict):
+                lines.append(f"- **{_cell(gap.get('kind'))}**: {_cell(gap.get('description'))}")
+            else:
+                lines.append(f"- {_cell(gap)}")
+        lines.append("")
+    expansions = artifact.get("recommended_expansions")
+    if isinstance(expansions, list) and expansions:
+        lines.extend(["## Recommended Expansions", "", *_bullet_list(expansions)])
+    notes = artifact.get("synthesis_notes")
+    if isinstance(notes, list) and notes:
+        lines.extend(["## Synthesis Notes", "", *_bullet_list(notes)])
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def render_research_artifact_markdown(artifact: dict[str, Any]) -> str:
     """Render a package-native research artifact as readable Markdown."""
     kind = artifact.get("kind")
+    if kind == "research_landscape":
+        return _render_research_landscape(artifact)
+    if kind == "field_map":
+        return _render_field_map(artifact)
     if kind == "focus_synthesis":
         return _render_focus_synthesis(artifact)
     if kind == "assessment":

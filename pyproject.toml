@@ -28,6 +28,9 @@ gaia-research = "gaia_research.cli:main"
 [project.entry-points."gaia.cli_plugins"]
 research = "gaia_research.plugin:register"
 
+[project.entry-points."gaia.skills"]
+gaia-research = "gaia_research.skills"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/gaia_research"]
 

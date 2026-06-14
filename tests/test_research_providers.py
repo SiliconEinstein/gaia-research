@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 from gaia_research import research_providers
 
 
-def test_litellm_completion_uses_normalized_proxy_endpoint(
+def test_litellm_completion_uses_explicit_gaia_research_endpoint(
     monkeypatch: Any,
 ) -> None:
     captured: dict[str, object] = {}
@@ -33,10 +33,12 @@ def test_litellm_completion_uses_normalized_proxy_endpoint(
     fake_runtime = FakeLiteLLM()
 
     monkeypatch.setenv(
-        "LITELLM_PROXY_API_BASE",
+        "GAIA_RESEARCH_LLM_API_BASE",
         "https://api.deepseek.com/chat/completions",
     )
-    monkeypatch.setenv("LITELLM_PROXY_API_KEY", "proxy-key")
+    monkeypatch.setenv("GAIA_RESEARCH_LLM_API_KEY", "research-key")
+    monkeypatch.setenv("LITELLM_PROXY_API_BASE", "https://legacy.example/v1")
+    monkeypatch.setenv("LITELLM_PROXY_API_KEY", "legacy-proxy-key")
     monkeypatch.setattr(
         research_providers,
         "import_module",
@@ -56,4 +58,17 @@ def test_litellm_completion_uses_normalized_proxy_endpoint(
     )
 
     assert captured["api_base"] == "https://api.deepseek.com"
-    assert captured["api_key"] == "proxy-key"
+    assert captured["api_key"] == "research-key"
+
+
+def test_litellm_env_kwargs_ignores_legacy_and_provider_native_keys(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.delenv("GAIA_RESEARCH_LLM_API_BASE", raising=False)
+    monkeypatch.delenv("GAIA_RESEARCH_LLM_API_KEY", raising=False)
+    monkeypatch.setenv("LITELLM_PROXY_API_BASE", "https://legacy.example/v1")
+    monkeypatch.setenv("LITELLM_PROXY_API_KEY", "legacy-proxy-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-native-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-native-key")
+
+    assert research_providers._litellm_env_kwargs() == {}

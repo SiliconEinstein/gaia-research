@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+from importlib import metadata
 from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Any, NoReturn
@@ -13,6 +15,7 @@ from gaia.cli.commands.search.lkm._indexes import DEFAULT_LKM_INDEX_ID
 from pydantic import ValidationError
 
 from gaia_research import (
+    CORE_PUBLIC_SURFACES,
     AssessmentSchemaError,
     ProposalSchemaError,
     ResearchOrchestratorError,
@@ -65,7 +68,6 @@ from gaia_research.research_runtime import (
     _read_json_object_path,
 )
 from gaia_research.run import RUN_MODES, ResearchRunStart, start_research_run
-from gaia_research.workflow_state import read_events, resume_report_run
 
 research_app = typer.Typer(
     name="research",
@@ -79,14 +81,229 @@ trace_app = typer.Typer(
     no_args_is_help=True,
 )
 
+AGENT_SKILLS: tuple[str, ...] = (
+    "gaia-research-bootstrap",
+    "gaia-research-run",
+    "gaia-research-status",
+    "gaia-research-artifacts",
+)
+
+REPORT_WORKFLOW: tuple[str, ...] = (
+    "topic",
+    "landscape",
+    "field_map",
+    "focus_selection",
+    "assessment",
+    "materialization_decision",
+    "report",
+)
+
+
+def _version_or_unknown(distribution: str) -> str:
+    try:
+        return metadata.version(distribution)
+    except metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _lkm_access_key_status() -> dict[str, object]:
+    accepted_env = ["GAIA_LKM_ACCESS_KEY", "LKM_ACCESS_KEY"]
+    try:
+        from gaia.lkm.credentials import credential_status
+
+        status = credential_status()
+    except Exception:
+        env_var = next((name for name in accepted_env if os.environ.get(name)), None)
+        return {
+            "ready": env_var is not None,
+            "source": "environment" if env_var else None,
+            "env_var": env_var,
+            "accepted_env": accepted_env,
+            "setup_command": "gaia search lkm auth login",
+        }
+    return {
+        "ready": bool(status.present),
+        "source": status.source if status.present else None,
+        "env_var": status.env_var,
+        "accepted_env": accepted_env,
+        "setup_command": "gaia search lkm auth login",
+    }
+
+
+def _llm_provider_status() -> dict[str, object]:
+    model = os.environ.get("GAIA_RESEARCH_LLM_MODEL")
+    api_base = os.environ.get("GAIA_RESEARCH_LLM_API_BASE")
+    key_envs = ["GAIA_RESEARCH_LLM_API_KEY"]
+    key_env = next((name for name in key_envs if os.environ.get(name)), None)
+    return {
+        "ready": bool(model and model.strip() and api_base and api_base.strip() and key_env),
+        "model_env": "GAIA_RESEARCH_LLM_MODEL",
+        "model_configured": bool(model and model.strip()),
+        "api_base_configured": bool(api_base and api_base.strip()),
+        "api_key_configured": key_env is not None,
+        "api_key_env": key_env,
+        "accepted_env": {
+            "model": ["GAIA_RESEARCH_LLM_MODEL"],
+            "api_base": ["GAIA_RESEARCH_LLM_API_BASE"],
+            "api_key": key_envs,
+        },
+    }
+
+
+def _doctor_payload(*, ok: bool, missing: list[str]) -> dict[str, object]:
+    lkm_status = _lkm_access_key_status()
+    llm_status = _llm_provider_status()
+    resolved_missing = list(missing)
+    if not lkm_status["ready"]:
+        resolved_missing.append("lkm_access_key")
+    if not llm_status["model_configured"]:
+        resolved_missing.append("llm_model")
+    if not llm_status["api_base_configured"]:
+        resolved_missing.append("llm_api_base")
+    if not llm_status["api_key_configured"]:
+        resolved_missing.append("llm_api_key")
+    return {
+        "ok": ok and not resolved_missing,
+        "package": "gaia-research",
+        "gaia_research_version": _version_or_unknown("gaia-research"),
+        "gaia_core_version": _version_or_unknown("gaia-lang"),
+        "plugin_entry_point": "gaia_research.plugin:register",
+        "skills_entry_point": "gaia_research.skills",
+        "core_surfaces": list(CORE_PUBLIC_SURFACES),
+        "required_gaia_cli": [
+            "gaia research doctor --for-agent --json",
+            "gaia research capabilities --json",
+            "gaia research run <pkg> --topic <topic> --json",
+            "gaia research status <pkg> --run-id <run-id> --json",
+            "gaia research artifacts <pkg> --run-id <run-id> --json",
+        ],
+        "credentials": {
+            "lkm_access_key": lkm_status,
+            "llm_provider": llm_status,
+        },
+        "missing": resolved_missing,
+    }
+
+
+def _capabilities_payload() -> dict[str, object]:
+    return {
+        "package": "gaia-research",
+        "agent_name": "EvidenceMaster",
+        "workflow": list(REPORT_WORKFLOW),
+        "commands": {
+            "doctor": {
+                "purpose": "Check Gaia core/plugin readiness for agent runtimes.",
+                "agent_form": "gaia research doctor --for-agent --json",
+            },
+            "capabilities": {
+                "purpose": "Describe the installed research workflow and skills.",
+                "agent_form": "gaia research capabilities --json",
+            },
+            "run": {
+                "purpose": "Start the report workflow for a topic in an existing Gaia package.",
+                "agent_form": (
+                    'gaia research run <pkg> --topic "<topic>" '
+                    "--profile <profile> --config <config> --json"
+                ),
+            },
+            "status": {
+                "purpose": "Read the current phase, status, event count, and artifact dirs.",
+                "agent_form": "gaia research status <pkg> --run-id <run-id> --json",
+            },
+            "artifacts": {
+                "purpose": "Index generated run artifacts for user-facing presentation.",
+                "agent_form": "gaia research artifacts <pkg> --run-id <run-id> --json",
+            },
+            "report": {
+                "purpose": "Render a research JSON artifact as readable Markdown.",
+                "agent_form": "gaia research report <pkg> --artifact <artifact-json>",
+            },
+        },
+        "agent_skills": list(AGENT_SKILLS),
+        "requirements": {
+            "python": ">=3.12",
+            "gaia_core": "released Gaia core with research plugin handoff",
+            "workspace": "existing Gaia knowledge package",
+            "lkm_access_key": "GAIA_LKM_ACCESS_KEY, LKM_ACCESS_KEY, or gaia search lkm auth login",
+            "llm_provider": (
+                "GAIA_RESEARCH_LLM_MODEL, GAIA_RESEARCH_LLM_API_BASE, "
+                "and GAIA_RESEARCH_LLM_API_KEY"
+            ),
+        },
+        "deprecated_skills": [
+            "gaia-evidence-subgraph",
+            "gaia-scholarly-synthesis",
+            "gaia-research-loop",
+        ],
+    }
+
 
 @research_app.command("doctor")
-def doctor_command() -> None:
+def doctor_command(
+    for_agent: Annotated[
+        bool,
+        typer.Option("--for-agent", help="Include agent-runtime readiness fields."),
+    ] = False,
+    env_file: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--env-file",
+            help="Load dotenv-style KEY=VALUE file before checking runtime readiness.",
+        ),
+    ] = None,
+    json_out: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON."),
+    ] = False,
+) -> None:
     """Check that gaia-research can see the Gaia core surfaces it needs."""
-    surfaces = verify_core_contract()
+    _load_research_env_files_or_exit(env_file)
+    missing: list[str] = []
+    try:
+        surfaces = verify_core_contract()
+    except ModuleNotFoundError as exc:
+        surfaces = ()
+        missing.append(exc.name or str(exc))
+
+    if json_out:
+        payload = _doctor_payload(ok=not missing, missing=missing)
+        typer.echo(json.dumps(payload, indent=2))
+        if not payload["ok"]:
+            raise typer.Exit(1)
+        return
+
+    if missing:
+        typer.echo("gaia-research doctor FAILED")
+        for item in missing:
+            typer.echo(f"- missing: {item}")
+        raise typer.Exit(1)
+
     typer.echo("gaia-research doctor OK")
+    if for_agent:
+        typer.echo("agent_runtime: ready")
     for surface in surfaces:
         typer.echo(f"- {surface}")
+
+
+@research_app.command("capabilities")
+def capabilities_command(
+    json_out: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON."),
+    ] = False,
+) -> None:
+    """Describe the installed agent-facing research workflow surface."""
+    payload = _capabilities_payload()
+    if json_out:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    typer.echo("Gaia Research capabilities")
+    typer.echo(f"agent: {payload['agent_name']}")
+    typer.echo("workflow: " + " -> ".join(REPORT_WORKFLOW))
+    commands = payload.get("commands")
+    if isinstance(commands, dict):
+        typer.echo("commands: " + ", ".join(str(name) for name in commands))
+    typer.echo("agent_skills: " + ", ".join(AGENT_SKILLS))
 
 
 def _load_or_exit(pkg: str) -> ResearchPackage:
@@ -333,6 +550,59 @@ def _legacy_llm_overrides(
     return overrides
 
 
+def _query_plan_default_queries(run: ResearchRunStart, *, topic: str) -> list[str]:
+    state = _read_json_object_path(run.state_path)
+    if state.get("status") != "waiting_for_input" or state.get("phase") != "query_plan":
+        return []
+    pending_checkpoint = state.get("pending_checkpoint")
+    if not isinstance(pending_checkpoint, str) or not pending_checkpoint.strip():
+        return []
+    checkpoint_path = Path(pending_checkpoint)
+    checkpoint = _read_json_object_path(checkpoint_path)
+    if checkpoint.get("type") != "checkpoint.query_plan":
+        return []
+    response_path = checkpoint_path.with_name("query_plan.response.json")
+    if response_path.exists():
+        response = _read_json_object_path(response_path)
+        if response.get("action") == "continue":
+            raw_response_queries = response.get("queries")
+            response_queries = (
+                [str(item).strip() for item in raw_response_queries]
+                if isinstance(raw_response_queries, list)
+                else []
+            )
+            return [query for query in response_queries if query]
+    default_action = checkpoint.get("default_action")
+    if not isinstance(default_action, dict) or default_action.get("action") != "continue":
+        return []
+    raw_queries = default_action.get("queries")
+    queries = [str(item).strip() for item in raw_queries] if isinstance(raw_queries, list) else []
+    queries = [query for query in queries if query]
+    if not queries:
+        state_topic = state.get("topic")
+        queries = [str(state_topic).strip() if isinstance(state_topic, str) else topic.strip()]
+    queries = [query for query in queries if query]
+    if not queries:
+        return []
+    response_path = checkpoint_path.with_name("query_plan.response.json")
+    response_path.write_text(
+        json.dumps(
+            {
+                "schema_version": checkpoint.get("schema_version", 1),
+                "checkpoint_id": checkpoint.get("checkpoint_id"),
+                "action": "continue",
+                "queries": queries,
+                "source": "default_action",
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return queries
+
+
 def _resolve_run_config_or_exit(
     *,
     profile: str,
@@ -563,7 +833,7 @@ def _print_sync_summary(payload: dict[str, object]) -> None:
 def contract_command(
     kind: Annotated[
         str,
-        typer.Argument(help="Contract to print: field_map, focus, assess, or propose."),
+        typer.Argument(help="Contract to print: query_plan, field_map, focus, assess, or propose."),
     ],
     language: Annotated[
         str,
@@ -637,14 +907,22 @@ def status_command(
 
 
 def _report_run_status_payload(path: Path, run_id: str) -> dict[str, object]:
-    handle, state = resume_report_run(path, run_id)
+    run_dir = Path(path).resolve() / ".gaia" / "research" / "runs" / run_id
+    state_path = run_dir / "state.json"
+    events_path = run_dir / "events.ndjson"
+    if not state_path.exists():
+        raise FileNotFoundError(state_path)
+    state = _read_json_object_path(state_path)
+    artifacts = state.get("artifacts")
+    if not isinstance(artifacts, dict):
+        artifacts = {}
     return {
-        "run_id": handle.run_id,
-        "status": state.status,
-        "phase": state.phase,
-        "run_dir": str(handle.run_dir),
-        "events": len(read_events(handle)),
-        "artifacts": dict(state.artifacts),
+        "run_id": str(state.get("run_id", run_id)),
+        "status": state.get("status"),
+        "phase": state.get("phase"),
+        "run_dir": str(run_dir),
+        "events": _count_run_events(events_path),
+        "artifacts": {str(key): str(value) for key, value in artifacts.items()},
     }
 
 
@@ -654,6 +932,106 @@ def _print_report_run_status(payload: dict[str, object]) -> None:
     typer.echo(f"phase: {payload['phase']}")
     typer.echo(f"run_dir: {payload['run_dir']}")
     typer.echo(f"events: {payload['events']}")
+
+
+def _append_indexed_file(
+    files: list[dict[str, object]],
+    seen: set[Path],
+    *,
+    kind: str,
+    path: Path,
+) -> None:
+    resolved = path.resolve()
+    if resolved in seen:
+        return
+    seen.add(resolved)
+    files.append(
+        {
+            "kind": kind,
+            "name": path.name,
+            "path": str(path),
+            "size_bytes": path.stat().st_size,
+        }
+    )
+
+
+def _artifact_file_index(run_dir: Path, artifact_paths: dict[str, str]) -> list[dict[str, object]]:
+    files: list[dict[str, object]] = []
+    seen: set[Path] = set()
+    for kind, artifact_path in sorted(artifact_paths.items()):
+        root = Path(artifact_path)
+        if not root.exists():
+            continue
+        if root.is_file():
+            _append_indexed_file(files, seen, kind=kind, path=root)
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            _append_indexed_file(files, seen, kind=kind, path=path)
+    if run_dir.exists():
+        for path in sorted(run_dir.rglob("*")):
+            if not path.is_file() or path.name in {"state.json", "events.ndjson"}:
+                continue
+            rel = path.relative_to(run_dir)
+            kind = rel.parts[0] if len(rel.parts) > 1 else "run"
+            _append_indexed_file(files, seen, kind=kind, path=path)
+    return files
+
+
+def _report_run_artifacts_payload(path: Path, run_id: str) -> dict[str, object]:
+    run_dir = Path(path).resolve() / ".gaia" / "research" / "runs" / run_id
+    state_path = run_dir / "state.json"
+    events_path = run_dir / "events.ndjson"
+    if not state_path.exists():
+        raise FileNotFoundError(state_path)
+    state = _read_json_object_path(state_path)
+    artifacts = state.get("artifacts")
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    artifact_paths = {str(key): str(value) for key, value in artifacts.items()}
+    return {
+        "run_id": str(state.get("run_id", run_id)),
+        "status": state.get("status"),
+        "phase": state.get("phase"),
+        "run_dir": str(run_dir),
+        "artifact_root": str(run_dir),
+        "state_path": str(state_path),
+        "events_path": str(events_path),
+        "artifact_dirs": artifact_paths,
+        "files": _artifact_file_index(run_dir, artifact_paths),
+    }
+
+
+@research_app.command("artifacts")
+def artifacts_command(
+    pkg: Annotated[str, typer.Argument(help="Path to a research workspace or Gaia package.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Report workflow run id.")],
+    json_out: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON."),
+    ] = False,
+) -> None:
+    """Index generated artifacts for a report workflow run."""
+    try:
+        payload = _report_run_artifacts_payload(Path(pkg), run_id)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    if json_out:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    typer.echo(f"Research artifacts: {payload['run_id']}")
+    typer.echo(f"status: {payload['status']}")
+    typer.echo(f"phase: {payload['phase']}")
+    typer.echo(f"artifact_root: {payload['artifact_root']}")
+    files = payload.get("files")
+    if isinstance(files, list):
+        for item in files:
+            if isinstance(item, dict):
+                typer.echo(f"- {item['kind']}: {item['path']}")
 
 
 @trace_app.command("record")
@@ -795,6 +1173,7 @@ def run_command(
         typer.Option(
             "--mode",
             help="Run mode: fast-package-native.",
+            hidden=True,
         ),
     ] = "fast-package-native",
     language: Annotated[
@@ -828,25 +1207,36 @@ def run_command(
         typer.Option(
             "--query",
             help="Run live broad LKM search for this query and persist normalized JSON.",
+            hidden=True,
         ),
     ] = None,
     search_json: Annotated[
         list[str] | None,
-        typer.Option("--search-json", help="Broad normalized `gaia search lkm` JSON file."),
+        typer.Option(
+            "--search-json",
+            help="Broad normalized `gaia search lkm` JSON file.",
+            hidden=True,
+        ),
     ] = None,
     search_index: Annotated[
         str | None,
-        typer.Option("--search-index", "--lkm-index", help="Configured LKM index id."),
+        typer.Option(
+            "--search-index",
+            "--lkm-index",
+            help="Configured LKM index id.",
+            hidden=True,
+        ),
     ] = None,
     search_limit: Annotated[
         int | None,
-        typer.Option("--search-limit", help="Per-query live LKM result limit."),
+        typer.Option("--search-limit", help="Per-query live LKM result limit.", hidden=True),
     ] = None,
     reasoning_only: Annotated[
         bool | None,
         typer.Option(
             "--reasoning-only/--all-lkm-results",
             help="Restrict live LKM search to reasoning-backed claims.",
+            hidden=True,
         ),
     ] = None,
     analysis_provider: Annotated[
@@ -854,41 +1244,51 @@ def run_command(
         typer.Option(
             "--analysis-provider",
             help="Analysis input source: checkpoint, command, or litellm.",
+            hidden=True,
         ),
     ] = None,
     model: Annotated[
         str | None,
-        typer.Option("--model", help="LiteLLM model for all analysis phases."),
+        typer.Option("--model", help="LiteLLM model for all analysis phases.", hidden=True),
     ] = None,
     focus_model: Annotated[
         str | None,
-        typer.Option("--focus-model", help="LiteLLM model override for focus analysis."),
+        typer.Option(
+            "--focus-model",
+            help="LiteLLM model override for focus analysis.",
+            hidden=True,
+        ),
     ] = None,
     assess_model: Annotated[
         str | None,
-        typer.Option("--assess-model", help="LiteLLM model override for assessment analysis."),
+        typer.Option(
+            "--assess-model",
+            help="LiteLLM model override for assessment analysis.",
+            hidden=True,
+        ),
     ] = None,
     llm_temperature: Annotated[
         float | None,
-        typer.Option("--llm-temperature", help="LiteLLM temperature."),
+        typer.Option("--llm-temperature", help="LiteLLM temperature.", hidden=True),
     ] = None,
     llm_timeout: Annotated[
         float | None,
-        typer.Option("--llm-timeout", help="LiteLLM timeout in seconds."),
+        typer.Option("--llm-timeout", help="LiteLLM timeout in seconds.", hidden=True),
     ] = None,
     llm_max_retries: Annotated[
         int | None,
-        typer.Option("--llm-max-retries", help="LiteLLM max retries."),
+        typer.Option("--llm-max-retries", help="LiteLLM max retries.", hidden=True),
     ] = None,
     llm_max_tokens: Annotated[
         int | None,
-        typer.Option("--llm-max-tokens", help="Optional LiteLLM max output tokens."),
+        typer.Option("--llm-max-tokens", help="Optional LiteLLM max output tokens.", hidden=True),
     ] = None,
     report_section_concurrency: Annotated[
         int | None,
         typer.Option(
             "--report-section-concurrency",
             help="Maximum concurrent LiteLLM calls for independent report sections.",
+            hidden=True,
         ),
     ] = None,
     focus_analysis_command: Annotated[
@@ -896,6 +1296,7 @@ def run_command(
         typer.Option(
             "--focus-analysis-command",
             help="Command provider for focus analysis; receives GAIA_RESEARCH_* env vars.",
+            hidden=True,
         ),
     ] = None,
     focus_analysis_json: Annotated[
@@ -903,6 +1304,7 @@ def run_command(
         typer.Option(
             "--focus-analysis-json",
             help="JSON matching `gaia research contract focus` for file-provider runs.",
+            hidden=True,
         ),
     ] = None,
     targeted_search_json: Annotated[
@@ -910,6 +1312,7 @@ def run_command(
         typer.Option(
             "--targeted-search-json",
             help="Targeted normalized `gaia search lkm` JSON file.",
+            hidden=True,
         ),
     ] = None,
     targeted_query: Annotated[
@@ -917,17 +1320,19 @@ def run_command(
         typer.Option(
             "--targeted-query",
             help=("Targeted query text; runs live search when --targeted-search-json is omitted."),
+            hidden=True,
         ),
     ] = None,
     focus: Annotated[
         str | None,
-        typer.Option("--focus", help="Focus id/QID to assess after focus synthesis."),
+        typer.Option("--focus", help="Focus id/QID to assess after focus synthesis.", hidden=True),
     ] = None,
     focus_count: Annotated[
         int | None,
         typer.Option(
             "--focus-count",
             help="Number of synthesized focuses to assess when --focus is omitted.",
+            hidden=True,
         ),
     ] = None,
     evidence_selection_mode: Annotated[
@@ -935,6 +1340,7 @@ def run_command(
         typer.Option(
             "--evidence-selection-mode",
             help="Evidence selection policy: fast or review.",
+            hidden=True,
         ),
     ] = None,
     evidence_max_items: Annotated[
@@ -942,6 +1348,7 @@ def run_command(
         typer.Option(
             "--evidence-max-items",
             help="Maximum selected evidence items per assessed focus.",
+            hidden=True,
         ),
     ] = None,
     evidence_max_papers: Annotated[
@@ -949,6 +1356,7 @@ def run_command(
         typer.Option(
             "--evidence-max-papers",
             help="Maximum selected paper leads/materialized papers per assessed focus.",
+            hidden=True,
         ),
     ] = None,
     evidence_max_chains: Annotated[
@@ -956,6 +1364,7 @@ def run_command(
         typer.Option(
             "--evidence-max-chains",
             help="Maximum selected chain claim ids per assessed focus.",
+            hidden=True,
         ),
     ] = None,
     assess_analysis_json: Annotated[
@@ -963,6 +1372,7 @@ def run_command(
         typer.Option(
             "--assess-analysis-json",
             help="JSON matching `gaia research contract assess` for file-provider runs.",
+            hidden=True,
         ),
     ] = None,
     assess_analysis_command: Annotated[
@@ -970,6 +1380,7 @@ def run_command(
         typer.Option(
             "--assess-analysis-command",
             help="Command provider for assessment analysis; receives GAIA_RESEARCH_* env vars.",
+            hidden=True,
         ),
     ] = None,
     json_out: Annotated[
@@ -1047,6 +1458,14 @@ def run_command(
     for event in run.events:
         if json_stream:
             typer.echo(json.dumps(event, ensure_ascii=False))
+
+    if (
+        run.resumed
+        and not broad_search_refs
+        and not broad_queries
+        and not can_auto_query_plan
+    ):
+        broad_queries = _query_plan_default_queries(run, topic=topic)
 
     runtime = DEFAULT_RUNTIME
     try:
