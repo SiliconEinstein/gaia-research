@@ -53,7 +53,7 @@ def test_doctor_can_emit_agent_readable_json(
     assert payload["plugin_entry_point"] == "gaia_research.plugin:register"
     assert "gaia.lkm.client" in payload["core_surfaces"]
     assert (
-        "gaia research run <pkg> --topic <topic> --profile fast --json"
+        "gaia research run <pkg> --topic <topic> --profile fast --json-stream"
         in payload["required_gaia_cli"]
     )
     assert payload["missing"] == []
@@ -171,7 +171,8 @@ def test_capabilities_json_describes_evidence_master_surface(
         "gaia-research-artifacts",
     ]
     assert payload["commands"]["run"]["agent_form"] == (
-        'gaia research run <pkg> --topic "<topic>" --profile fast --env-file <env-file> --json'
+        'gaia research run <pkg> --topic "<topic>" '
+        "--profile fast --env-file <env-file> --json-stream"
     )
 
 
@@ -290,6 +291,7 @@ def test_status_and_artifacts_read_state_created_by_run_command(
     assert status_payload["status"] == "waiting_for_input"
     assert status_payload["phase"] == "query_plan"
     assert status_payload["events"] == 3
+    assert status_payload["recent_events"][-1]["type"] == "run.waiting_for_input"
 
     assert cli.main(["artifacts", str(pkg), "--run-id", "local-smoke", "--json"]) == 0
     artifacts_payload = json.loads(capsys.readouterr().out)

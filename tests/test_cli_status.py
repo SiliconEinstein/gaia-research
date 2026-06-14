@@ -99,7 +99,9 @@ def test_status_command_can_emit_json(
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload == {
+    assert {
+        key: value for key, value in payload.items() if key != "recent_events"
+    } == {
         "run_id": "dqcp-fast",
         "status": "running",
         "phase": "setup",
@@ -114,6 +116,12 @@ def test_status_command_can_emit_json(
             "reports": str(handle.reports_dir),
         },
     }
+    assert [event["type"] for event in payload["recent_events"]] == [
+        "run.created",
+        "landscape.started",
+    ]
+    assert payload["recent_events"][0]["run_id"] == "dqcp-fast"
+    assert payload["recent_events"][1]["phase"] == "landscape"
 
 
 def test_run_command_accepts_topic_workspace_and_fast_profile(

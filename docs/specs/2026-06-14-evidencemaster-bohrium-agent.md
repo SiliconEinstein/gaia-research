@@ -62,7 +62,7 @@ Bohrium Agents owns:
 ```bash
 gaia research doctor --for-agent [--env-file <path>] --json
 gaia research capabilities --json
-gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json
+gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json-stream
 gaia research status <pkg> --run-id <run-id> --json
 gaia research artifacts <pkg> --run-id <run-id> --json
 ```
@@ -105,6 +105,10 @@ Prompt changes belong in `src/gaia_research/prompts/research/`. Agent-facing
 skills must not ask the platform agent to write phase JSON in the normal path.
 The agent invokes `gaia research run --profile fast`; Gaia Research loads
 packaged prompts and calls the configured LiteLLM provider.
+
+For long-running interactive runs, agent-facing commands should use
+`--json-stream`. Plain `--json` is reserved for callers that only need a final
+machine-readable summary after the run command exits.
 
 `gaia-research` must also expose a `gaia.skills` entry point:
 
@@ -192,8 +196,8 @@ Rules:
 4. Separate conclusions, evidence, methods/parameters, uncertainty, and next
    steps in user-facing answers.
 5. Do not rely on deprecated legacy skills as current capabilities.
-6. Use JSON outputs for your own parsing. Do not show raw JSON to users unless
-   they ask for debugging details.
+6. Use `--json-stream` run events and JSON outputs for your own parsing. Do not
+   show raw JSON to users unless they ask for debugging details.
 7. Do not hand-write Gaia Research phase JSON in the normal path. Let
    `gaia research run` and its configured providers generate query plans,
    field maps, focuses, assessments, and reports. Write checkpoint response
@@ -259,12 +263,13 @@ artifact.
 Canonical command:
 
 ```bash
-gaia research run <pkg> --topic "<topic>" --json
+gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json-stream
 ```
 
 Use `--config <path>` for workflow-specific tuning. Do not ask the agent to set
 individual search, LLM, focus, or evidence limits unless debugging a failed
-workflow.
+workflow. Use `--json` only for non-interactive callers that do not need
+progress events while the command is running.
 
 ### `gaia-research-status`
 
@@ -304,7 +309,7 @@ uv run gaia-research doctor --for-agent --json
 # Or, if local credentials live in a dotenv file:
 uv run gaia-research doctor --for-agent --env-file <path> --json
 uv run gaia-research capabilities --json
-uv run gaia-research run <pkg> --topic "<golden topic>" --json
+uv run gaia-research run <pkg> --topic "<golden topic>" --profile fast --env-file <path> --json-stream
 uv run gaia-research status <pkg> --run-id <run-id> --json
 uv run gaia-research artifacts <pkg> --run-id <run-id> --json
 ```
@@ -317,7 +322,7 @@ uv run gaia research doctor --for-agent --json
 # Or, if local credentials live in a dotenv file:
 uv run gaia research doctor --for-agent --env-file <path> --json
 uv run gaia research capabilities --json
-uv run gaia research run <pkg> --topic "<golden topic>" --json
+uv run gaia research run <pkg> --topic "<golden topic>" --profile fast --env-file <path> --json-stream
 uv run gaia research status <pkg> --run-id <run-id> --json
 uv run gaia research artifacts <pkg> --run-id <run-id> --json
 ```
@@ -328,8 +333,8 @@ Local DoD:
 - doctor reports LKM access and LLM provider readiness without exposing secret
   values;
 - capabilities lists EvidenceMaster workflow and P0 skills;
-- run returns a `run_id`;
-- status returns phase and artifact directories;
+- run emits NDJSON progress events with a `run_id`;
+- status returns phase, artifact directories, and recent events;
 - artifacts lists generated files;
 - `gaia skill list` can discover `gaia-research` skills after Gaia core release;
 - no legacy research skill is required for P0.

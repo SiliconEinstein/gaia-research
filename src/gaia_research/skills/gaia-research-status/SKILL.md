@@ -15,10 +15,12 @@ Use this to inspect an existing report workflow run.
 gaia research status <pkg> --run-id <run-id> --json
 ```
 
-2. Read `status`, `phase`, `events`, `run_dir`, and `artifacts`.
+2. Read `status`, `phase`, `events`, `recent_events`, `run_dir`, and
+   `artifacts`.
 3. If the run is paused or failed, inspect the state and event paths before
    deciding whether to continue, rerun, or ask for missing input.
-4. Tell the user the current phase, generated artifact areas, and next action.
+4. Tell the user the current phase, the latest meaningful event, generated
+   artifact areas, and next action.
 
 ## User-Facing Output
 

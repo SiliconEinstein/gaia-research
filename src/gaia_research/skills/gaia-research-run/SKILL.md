@@ -19,7 +19,7 @@ knowledge package.
 4. Run:
 
 ```bash
-gaia research run <pkg> --topic "<topic>" --profile fast --json
+gaia research run <pkg> --topic "<topic>" --profile fast --json-stream
 ```
 
 EvidenceMaster defaults to `fast`. Do not switch to `broad` or `deep` unless
@@ -29,18 +29,19 @@ Use `--config <path>` only for workflow tuning/debugging instead of passing
 individual search, LLM, focus, or evidence limits on the command line:
 
 ```bash
-gaia research run <pkg> --topic "<topic>" --profile fast --config <path> --json
+gaia research run <pkg> --topic "<topic>" --profile fast --config <path> --json-stream
 ```
 
 If credentials are provided through a local dotenv file, include it as runtime
 environment only:
 
 ```bash
-gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json
+gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json-stream
 ```
 
-5. Capture `run_id`, `status`, `phase`, `run_dir`, `state_path`, and
-   `events_path`.
+5. Treat each stdout line as one NDJSON progress event. Capture `run_id`,
+   `phase`, `run_dir`, `state_path`, `events_path`, generated artifact paths,
+   and provider/search events as they arrive.
 6. Summarize the workflow state for the user and suggest the next status or
    artifacts command.
 
@@ -49,7 +50,7 @@ gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --jso
 The simplest agent behavior is:
 
 ```bash
-gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json
+gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json-stream
 gaia research status <pkg> --run-id <run-id> --json
 gaia research artifacts <pkg> --run-id <run-id> --json
 ```
@@ -58,6 +59,15 @@ When LLM credentials are present, Gaia Research should own query planning,
 field-map analysis, focus synthesis, assessment, and report JSON. The agent
 should summarize state and artifacts for the user, not invent or fill those JSON
 objects itself.
+
+Use `--json` only when the caller does not need live progress and wants a final
+machine-readable summary after the command completes. For interactive agents,
+prefer `--json-stream`.
+
+If the host platform does not expose streaming stdout while `run` is active,
+poll `gaia research status <pkg> --run-id <run-id> --json` from a separate
+tool/session when possible. The status payload includes `recent_events` from
+`events.ndjson`.
 
 ## Checkpoint Flow
 
@@ -87,7 +97,7 @@ For `query_plan` only:
    config, and env file:
 
 ```bash
-gaia research run <pkg> --topic "<topic>" --run-id <run-id> --profile fast --json
+gaia research run <pkg> --topic "<topic>" --run-id <run-id> --profile fast --json-stream
 ```
 
 Only the second `run` invocation advances the state machine. `status` reports

@@ -94,7 +94,9 @@ def test_plugin_status_command_can_emit_json(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload == {
+    assert {
+        key: value for key, value in payload.items() if key != "recent_events"
+    } == {
         "run_id": "aspirin-fast",
         "status": "running",
         "phase": "setup",
@@ -109,3 +111,5 @@ def test_plugin_status_command_can_emit_json(tmp_path: Path) -> None:
             "reports": str(handle.reports_dir),
         },
     }
+    assert [event["type"] for event in payload["recent_events"]] == ["run.created"]
+    assert payload["recent_events"][0]["run_id"] == "aspirin-fast"

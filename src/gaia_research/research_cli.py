@@ -173,7 +173,7 @@ def _doctor_payload(*, ok: bool, missing: list[str]) -> dict[str, object]:
         "required_gaia_cli": [
             "gaia research doctor --for-agent --json",
             "gaia research capabilities --json",
-            "gaia research run <pkg> --topic <topic> --profile fast --json",
+            "gaia research run <pkg> --topic <topic> --profile fast --json-stream",
             "gaia research status <pkg> --run-id <run-id> --json",
             "gaia research artifacts <pkg> --run-id <run-id> --json",
         ],
@@ -203,7 +203,7 @@ def _capabilities_payload() -> dict[str, object]:
                 "purpose": "Start the report workflow for a topic in an existing Gaia package.",
                 "agent_form": (
                     'gaia research run <pkg> --topic "<topic>" '
-                    "--profile fast --env-file <env-file> --json"
+                    "--profile fast --env-file <env-file> --json-stream"
                 ),
             },
             "status": {
@@ -922,6 +922,7 @@ def _report_run_status_payload(path: Path, run_id: str) -> dict[str, object]:
         "phase": state.get("phase"),
         "run_dir": str(run_dir),
         "events": _count_run_events(events_path),
+        "recent_events": _tail_run_events(events_path, limit=5),
         "artifacts": {str(key): str(value) for key, value in artifacts.items()},
     }
 
@@ -1615,6 +1616,22 @@ def _count_run_events(events_path: Path) -> int:
     if not events_path.exists():
         return 0
     return sum(1 for line in events_path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def _tail_run_events(events_path: Path, *, limit: int) -> list[dict[str, object]]:
+    if not events_path.exists():
+        return []
+    events: list[dict[str, object]] = []
+    for line in events_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append({str(key): value for key, value in event.items()})
+    return events[-limit:]
 
 
 @research_app.command("explore")
