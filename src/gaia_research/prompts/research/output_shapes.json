@@ -1,0 +1,81 @@
+{
+  "query_plan": {
+    "required_top_level_keys": ["queries"],
+    "queries_item_shape": {
+      "query": "search query text",
+      "rationale": "why it helps"
+    }
+  },
+  "field_map_analysis": {
+    "required_top_level_keys": [
+      "domain_thesis",
+      "buckets",
+      "controversy_axes",
+      "coverage_gaps",
+      "recommended_expansions",
+      "synthesis_notes"
+    ],
+    "buckets_item_keys": [
+      "id",
+      "title",
+      "role",
+      "required_for_review",
+      "coverage_status",
+      "evidence_refs",
+      "recommended_queries"
+    ],
+    "coverage_gaps_item_keys": ["kind", "description", "recommended_queries"]
+  },
+  "focus_analysis": {
+    "required_top_level_keys": ["focuses", "coverage_gaps", "notes"],
+    "focuses_item_keys": [
+      "id",
+      "kind",
+      "status",
+      "question",
+      "rationale",
+      "priority",
+      "readiness",
+      "scope",
+      "coverage",
+      "evidence_refs",
+      "suggested_queries"
+    ]
+  },
+  "assess_analysis": {
+    "required_top_level_keys": ["relations", "candidate_obligations"],
+    "relations_item_keys": [
+      "type",
+      "claim",
+      "rationale",
+      "epistemic_status",
+      "promotion_hint",
+      "source_refs"
+    ],
+    "optional_judgment_keys": ["limitations", "next_queries"],
+    "candidate_obligations_item_keys": [
+      "kind",
+      "content",
+      "source_refs",
+      "actionable"
+    ]
+  },
+  "report_plan": {
+    "required_top_level_keys": [
+      "title",
+      "abstract",
+      "thesis",
+      "sections",
+      "conclusion_prompt"
+    ],
+    "sections_item_keys": ["id", "title", "purpose", "evidence_refs"]
+  },
+  "report_section": {
+    "required_top_level_keys": ["section_id", "title", "markdown", "used_refs"],
+    "markdown": "Markdown for exactly one report section. Start with a level-2 heading."
+  },
+  "report_stitch": {
+    "required_top_level_keys": ["markdown"],
+    "markdown": "Complete final report Markdown revised from input.draft_markdown. Use one level-1 title, then level-2 sections with blank lines between headings and paragraphs. Preserve the draft's body sections and inline source refs; only edit for coherence, transitions, repetition, and formatting. All evidence citations must use renderer syntax such as [variable:gcn_...] or [paper:814...], never bare ids."
+  }
+}

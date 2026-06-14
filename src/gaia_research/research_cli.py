@@ -173,7 +173,7 @@ def _doctor_payload(*, ok: bool, missing: list[str]) -> dict[str, object]:
         "required_gaia_cli": [
             "gaia research doctor --for-agent --json",
             "gaia research capabilities --json",
-            "gaia research run <pkg> --topic <topic> --json",
+            "gaia research run <pkg> --topic <topic> --profile fast --json",
             "gaia research status <pkg> --run-id <run-id> --json",
             "gaia research artifacts <pkg> --run-id <run-id> --json",
         ],
@@ -203,7 +203,7 @@ def _capabilities_payload() -> dict[str, object]:
                 "purpose": "Start the report workflow for a topic in an existing Gaia package.",
                 "agent_form": (
                     'gaia research run <pkg> --topic "<topic>" '
-                    "--profile <profile> --config <config> --json"
+                    "--profile fast --env-file <env-file> --json"
                 ),
             },
             "status": {
@@ -1183,7 +1183,7 @@ def run_command(
     profile: Annotated[
         str,
         typer.Option("--profile", help="Research profile used by the fixed pipeline."),
-    ] = "evidence-assessment",
+    ] = "fast",
     run_id: Annotated[
         str | None,
         typer.Option("--run-id", help="Optional deterministic run id for tests or UI callers."),

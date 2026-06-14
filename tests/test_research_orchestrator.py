@@ -331,7 +331,7 @@ def test_checkpoint_assess_pause_uses_typed_engine_signal(tmp_path: Path) -> Non
         topic="aspirin evidence",
         mode="fast-package-native",
         language="en",
-        profile="review",
+        profile="fast",
         run_id="typed-pause",
         wait_for_query_plan=False,
     )

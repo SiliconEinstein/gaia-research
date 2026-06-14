@@ -77,8 +77,8 @@ def test_write_and_read_state_round_trip(tmp_path: Path) -> None:
     handle, state = create_report_run(
         tmp_path / "workspace",
         topic="dqcp landscape",
-        profile="review",
-        run_id="dqcp-review",
+        profile="broad",
+        run_id="dqcp-broad",
     )
     updated = ReportRunState(
         run_id=state.run_id,

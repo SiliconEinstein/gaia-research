@@ -33,6 +33,10 @@ gaia-research = "gaia_research.skills"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gaia_research"]
+artifacts = [
+  "src/gaia_research/prompts/**/*.md",
+  "src/gaia_research/prompts/**/*.json",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true

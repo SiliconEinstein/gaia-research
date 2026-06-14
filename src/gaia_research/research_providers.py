@@ -16,6 +16,11 @@ from typing import Any, cast
 import typer
 
 from gaia_research import ResearchPackage
+from gaia_research.prompt_assets import (
+    load_research_output_shape,
+    load_research_phase_prompt,
+    load_research_system_prompt,
+)
 from gaia_research.research_runtime import (
     _emit_run_event,
     _read_json_object_path,
@@ -510,21 +515,15 @@ def _litellm_messages(
     return [
         {
             "role": "system",
-            "content": (
-                "You are Gaia's deterministic JSON compiler for research artifacts. "
-                "Return exactly one valid JSON object. The first non-whitespace "
-                "character must be `{` and the last must be `}`. Do not include "
-                "markdown, prose, XML, citations outside JSON, or code fences. Use "
-                "only source refs and ids present in the input artifact payloads."
-            ),
+            "content": load_research_system_prompt(),
         },
         {
             "role": "user",
             "content": json.dumps(
                 {
                     "phase": phase,
-                    "instruction": _litellm_phase_instruction(phase),
-                    "output_shape": _litellm_output_shape(phase),
+                    "instruction": load_research_phase_prompt(phase),
+                    "output_shape": load_research_output_shape(phase),
                     "validation_rules": [
                         "Return a single JSON object, not an array or string.",
                         "Do not add explanatory text before or after the JSON.",
@@ -544,166 +543,6 @@ def _litellm_messages(
             ),
         },
     ]
-
-
-def _litellm_phase_instruction(phase: str) -> str:
-    if phase == "query_plan":
-        return (
-            "Generate 3-5 broad live-search queries for the topic. Cover distinct "
-            "evidence families likely to support an autonomous review map: "
-            "foundational theory, canonical models, methods/diagnostics, experiments "
-            "where relevant, and recent controversies. Do not assess evidence yet."
-        )
-    if phase == "field_map_analysis":
-        return (
-            "Induce a review-oriented field map from the broad landscape before "
-            "selecting narrow focuses. Build a taxonomy from primary retrieved "
-            "evidence: model families, methods, observables, theory constraints, "
-            "experimental systems, controversy axes, and coverage gaps. Recommend "
-            "only the highest-value live-search expansions needed for review coverage."
-        )
-    if phase == "focus_analysis":
-        return (
-            "Select 1-4 assessable research focuses from the landscapes and field map. "
-            "Each focus must be grounded in retrieved item ids, should fit into a "
-            "field-map bucket or controversy axis, and should be narrow enough for "
-            "immediate assessment."
-        )
-    if phase == "assess_analysis":
-        return (
-            "Assess only the selected focus against the selected evidence packet. "
-            "Produce at most 5 grounded candidate relations, limitations, and next "
-            "queries. Do not write the final review prose; later report phases will "
-            "write the article from this judgment. Emit at most 2 deferred "
-            "candidate obligations that directly follow from missing or conflicting "
-            "evidence. Set obligation.actionable=true only for a near-term blocking "
-            "task that should become an open inquiry obligation."
-        )
-    if phase == "report_plan":
-        return (
-            "Plan a scholarly evidence-review article from the field map, focus, "
-            "selected evidence, and assessment judgment. Produce a concise section "
-            "outline. Each section must have a stable id, title, purpose, and grounded "
-            "evidence refs. Do not reassess evidence; preserve the assessment judgment."
-        )
-    if phase == "report_section":
-        return (
-            "Write exactly one article section from the section plan, selected evidence, "
-            "section_evidence context, and assessment judgment. Use only refs and evidence "
-            "records present in section_evidence. If section_evidence.missing_refs is not "
-            "empty, explicitly describe that coverage gap instead of inventing details. Do "
-            "not change the assessment conclusion. Return section markdown, not a full article."
-        )
-    if phase == "report_stitch":
-        return (
-            "Revise the already stitched draft_markdown into one coherent scholarly "
-            "evidence-review report. Treat draft_markdown as the authoritative article "
-            "draft: preserve section order, headings, paragraphs, citations, substantive "
-            "claims, caveats, and the assessment conclusion. Do light article editing "
-            "only: improve title, abstract, transitions, local flow, and conclusion; "
-            "remove exact repetition; repair Markdown spacing. Before returning, "
-            "normalize citations so every evidence identifier is renderer-compatible: "
-            "use [variable:<id>] for variable/item ids such as gcn_* and [paper:<id>] "
-            "for paper ids; do not leave bare gcn_* ids or bare numeric paper ids in "
-            "prose. Do not compress the article into an executive summary, do not "
-            "drop sections, and do not add workflow, benchmark, trace, or "
-            "implementation commentary."
-        )
-    return "Produce the contract-shaped JSON for this research phase."
-
-
-def _litellm_output_shape(phase: str) -> dict[str, object]:
-    if phase == "query_plan":
-        return {
-            "required_top_level_keys": ["queries"],
-            "queries_item_shape": {"query": "search query text", "rationale": "why it helps"},
-        }
-    if phase == "field_map_analysis":
-        return {
-            "required_top_level_keys": [
-                "domain_thesis",
-                "buckets",
-                "controversy_axes",
-                "coverage_gaps",
-                "recommended_expansions",
-                "synthesis_notes",
-            ],
-            "buckets_item_keys": [
-                "id",
-                "title",
-                "role",
-                "required_for_review",
-                "coverage_status",
-                "evidence_refs",
-                "recommended_queries",
-            ],
-            "coverage_gaps_item_keys": ["kind", "description", "recommended_queries"],
-        }
-    if phase == "focus_analysis":
-        return {
-            "required_top_level_keys": ["focuses", "coverage_gaps", "notes"],
-            "focuses_item_keys": [
-                "id",
-                "kind",
-                "status",
-                "question",
-                "rationale",
-                "priority",
-                "readiness",
-                "scope",
-                "coverage",
-                "evidence_refs",
-                "suggested_queries",
-            ],
-        }
-    if phase == "assess_analysis":
-        return {
-            "required_top_level_keys": ["relations", "candidate_obligations"],
-            "relations_item_keys": [
-                "type",
-                "claim",
-                "rationale",
-                "epistemic_status",
-                "promotion_hint",
-                "source_refs",
-            ],
-            "optional_judgment_keys": ["limitations", "next_queries"],
-            "candidate_obligations_item_keys": [
-                "kind",
-                "content",
-                "source_refs",
-                "actionable",
-            ],
-        }
-    if phase == "report_plan":
-        return {
-            "required_top_level_keys": [
-                "title",
-                "abstract",
-                "thesis",
-                "sections",
-                "conclusion_prompt",
-            ],
-            "sections_item_keys": ["id", "title", "purpose", "evidence_refs"],
-        }
-    if phase == "report_section":
-        return {
-            "required_top_level_keys": ["section_id", "title", "markdown", "used_refs"],
-            "markdown": "Markdown for exactly one report section. Start with a level-2 heading.",
-        }
-    if phase == "report_stitch":
-        return {
-            "required_top_level_keys": ["markdown"],
-            "markdown": (
-                "Complete final report Markdown revised from input.draft_markdown. "
-                "Use one level-1 title, then level-2 sections with blank lines between "
-                "headings and paragraphs. Preserve the draft's body sections and inline "
-                "source refs; only edit for coherence, transitions, repetition, and "
-                "formatting. All evidence citations must use renderer syntax such as "
-                "[variable:gcn_...] or [paper:814...], never bare ids."
-            ),
-        }
-    return {"required_top_level_keys": []}
 
 
 def _hydrate_analysis_provider_input(payload: dict[str, object]) -> dict[str, object]:

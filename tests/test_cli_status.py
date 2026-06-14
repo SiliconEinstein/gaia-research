@@ -29,6 +29,11 @@ def _write_research_package(pkg_dir: Path) -> Path:
     return pkg_dir
 
 
+def _write_checkpoint_config(path: Path) -> Path:
+    path.write_text(json.dumps({"llm": {"provider": "checkpoint"}}), encoding="utf-8")
+    return path
+
+
 def test_review_command_is_not_registered(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
         cli.main(["review"])
@@ -116,6 +121,7 @@ def test_run_command_accepts_topic_workspace_and_fast_profile(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     workspace = _write_research_package(tmp_path / "workspace")
+    config = _write_checkpoint_config(tmp_path / "checkpoint.json")
 
     exit_code = cli.main(
         [
@@ -125,6 +131,8 @@ def test_run_command_accepts_topic_workspace_and_fast_profile(
             "aspirin primary prevention",
             "--profile",
             "fast",
+            "--config",
+            str(config),
             "--run-id",
             "aspirin-fast",
             "--json",
@@ -154,6 +162,7 @@ def test_run_command_resumes_query_plan_with_default_topic_query(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     workspace = _write_research_package(tmp_path / "workspace")
+    config = _write_checkpoint_config(tmp_path / "checkpoint.json")
     captured: dict[str, object] = {}
     search_json = tmp_path / "search.json"
     search_json.write_text('{"items": []}\n', encoding="utf-8")
@@ -167,6 +176,8 @@ def test_run_command_resumes_query_plan_with_default_topic_query(
                 "aspirin primary prevention",
                 "--profile",
                 "fast",
+                "--config",
+                str(config),
                 "--run-id",
                 "aspirin-fast",
                 "--json",
@@ -203,6 +214,8 @@ def test_run_command_resumes_query_plan_with_default_topic_query(
                 "aspirin primary prevention",
                 "--profile",
                 "fast",
+                "--config",
+                str(config),
                 "--run-id",
                 "aspirin-fast",
                 "--json",
@@ -223,6 +236,7 @@ def test_run_command_resumes_query_plan_from_response_file(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     workspace = _write_research_package(tmp_path / "workspace")
+    config = _write_checkpoint_config(tmp_path / "checkpoint.json")
     captured: dict[str, object] = {}
     search_json = tmp_path / "search.json"
     search_json.write_text('{"items": []}\n', encoding="utf-8")
@@ -236,6 +250,8 @@ def test_run_command_resumes_query_plan_from_response_file(
                 "aspirin primary prevention",
                 "--profile",
                 "fast",
+                "--config",
+                str(config),
                 "--run-id",
                 "aspirin-fast",
                 "--json",
@@ -284,6 +300,8 @@ def test_run_command_resumes_query_plan_from_response_file(
                 "aspirin primary prevention",
                 "--profile",
                 "fast",
+                "--config",
+                str(config),
                 "--run-id",
                 "aspirin-fast",
                 "--json",

@@ -8,6 +8,19 @@ from typing import Any, ClassVar
 from gaia_research import research_providers
 
 
+def test_litellm_messages_use_packaged_prompt_assets() -> None:
+    messages = research_providers._litellm_messages(
+        phase="query_plan",
+        input_payload={"topic": "smoke"},
+    )
+
+    assert messages[0]["role"] == "system"
+    assert "Return exactly one valid JSON object" in messages[0]["content"]
+    assert messages[1]["role"] == "user"
+    assert "Generate 3-5 broad live-search queries" in messages[1]["content"]
+    assert "required_top_level_keys" in messages[1]["content"]
+
+
 def test_litellm_completion_uses_explicit_gaia_research_endpoint(
     monkeypatch: Any,
 ) -> None:

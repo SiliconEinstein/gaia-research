@@ -62,7 +62,7 @@ Bohrium Agents owns:
 ```bash
 gaia research doctor --for-agent [--env-file <path>] --json
 gaia research capabilities --json
-gaia research run <pkg> --topic "<topic>" --profile <profile> --config <config> --json
+gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json
 gaia research status <pkg> --run-id <run-id> --json
 gaia research artifacts <pkg> --run-id <run-id> --json
 ```
@@ -96,6 +96,15 @@ The agent-facing `run --help` surface should stay narrow. Per-run search, LLM,
 focus, and evidence tuning flags are compatibility/debug overrides and should be
 hidden from normal help. Agents should use built-in profiles or JSON/TOML config
 files instead.
+
+EvidenceMaster defaults to `--profile fast`. `broad` and `deep` are reserved
+for later explicit operator/user choices; the first Bohrium/CodeWhale testing
+cycle should iterate only `fast`.
+
+Prompt changes belong in `src/gaia_research/prompts/research/`. Agent-facing
+skills must not ask the platform agent to write phase JSON in the normal path.
+The agent invokes `gaia research run --profile fast`; Gaia Research loads
+packaged prompts and calls the configured LiteLLM provider.
 
 `gaia-research` must also expose a `gaia.skills` entry point:
 
@@ -185,11 +194,15 @@ Rules:
 5. Do not rely on deprecated legacy skills as current capabilities.
 6. Use JSON outputs for your own parsing. Do not show raw JSON to users unless
    they ask for debugging details.
-7. When users ask for intermediate products, prefer field maps, focus cards,
+7. Do not hand-write Gaia Research phase JSON in the normal path. Let
+   `gaia research run` and its configured providers generate query plans,
+   field maps, focuses, assessments, and reports. Write checkpoint response
+   JSON only for human review, UI edits, or debugging.
+8. When users ask for intermediate products, prefer field maps, focus cards,
    evidence matrices, workflow timelines, and dashboards.
-8. If a command fails, inspect doctor/status/artifacts before retrying or
+9. If a command fails, inspect doctor/status/artifacts before retrying or
    explaining the blocker.
-9. If Bohrium/LKM access or the LLM provider is missing, ask the user or platform
+10. If Bohrium/LKM access or the LLM provider is missing, ask the user or platform
    operator to configure runtime secrets. Do not ask for secrets in chat unless
    no secret manager is available, and never print secret values.
 ```

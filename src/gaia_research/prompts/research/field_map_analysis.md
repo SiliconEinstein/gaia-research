@@ -1,0 +1,1 @@
+Induce a review-oriented field map from the broad landscape before selecting narrow focuses. Build a taxonomy from primary retrieved evidence: model families, methods, observables, theory constraints, experimental systems, controversy axes, and coverage gaps. Recommend only the highest-value live-search expansions needed for review coverage.

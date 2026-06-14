@@ -30,6 +30,11 @@ fi
 
 "${tmp_dir}/venv/bin/gaia-research"
 "${tmp_dir}/venv/bin/python" - <<'PY'
+from gaia_research.prompt_assets import load_research_system_prompt
+
+print(load_research_system_prompt()[:20])
+PY
+"${tmp_dir}/venv/bin/python" - <<'PY'
 from importlib import metadata
 
 entry_points = metadata.distribution("gaia-research").entry_points

@@ -30,6 +30,11 @@ def _write_research_package(pkg_dir: Path) -> Path:
     return pkg_dir
 
 
+def _write_checkpoint_config(path: Path) -> Path:
+    path.write_text(json.dumps({"llm": {"provider": "checkpoint"}}), encoding="utf-8")
+    return path
+
+
 def test_doctor_can_emit_agent_readable_json(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -47,7 +52,10 @@ def test_doctor_can_emit_agent_readable_json(
     assert payload["package"] == "gaia-research"
     assert payload["plugin_entry_point"] == "gaia_research.plugin:register"
     assert "gaia.lkm.client" in payload["core_surfaces"]
-    assert "gaia research run <pkg> --topic <topic> --json" in payload["required_gaia_cli"]
+    assert (
+        "gaia research run <pkg> --topic <topic> --profile fast --json"
+        in payload["required_gaia_cli"]
+    )
     assert payload["missing"] == []
 
 
@@ -163,7 +171,7 @@ def test_capabilities_json_describes_evidence_master_surface(
         "gaia-research-artifacts",
     ]
     assert payload["commands"]["run"]["agent_form"] == (
-        'gaia research run <pkg> --topic "<topic>" --profile <profile> --config <config> --json'
+        'gaia research run <pkg> --topic "<topic>" --profile fast --env-file <env-file> --json'
     )
 
 
@@ -202,6 +210,8 @@ def test_hidden_run_overrides_remain_backward_compatible(
                 "compatibility smoke",
                 "--profile",
                 "fast",
+                "--analysis-provider",
+                "checkpoint",
                 "--run-id",
                 "compat-smoke",
                 "--search-limit",
@@ -252,6 +262,7 @@ def test_status_and_artifacts_read_state_created_by_run_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     pkg = _write_research_package(tmp_path / "workspace")
+    config = _write_checkpoint_config(tmp_path / "checkpoint.json")
 
     assert (
         cli.main(
@@ -262,6 +273,8 @@ def test_status_and_artifacts_read_state_created_by_run_command(
                 "local EvidenceMaster smoke",
                 "--profile",
                 "fast",
+                "--config",
+                str(config),
                 "--run-id",
                 "local-smoke",
                 "--json",

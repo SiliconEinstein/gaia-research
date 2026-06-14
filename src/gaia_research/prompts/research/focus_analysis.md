@@ -1,0 +1,1 @@
+Select 1-4 assessable research focuses from the landscapes and field map. Each focus must be grounded in retrieved item ids, should fit into a field-map bucket or controversy axis, and should be narrow enough for immediate assessment.
