@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from importlib import metadata, resources
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
+from typer.models import OptionInfo
 
-from gaia_research import cli
+from gaia_research import cli, research_cli
 from gaia_research.workflow_state import create_report_run
 
 
@@ -33,6 +35,20 @@ def _write_research_package(pkg_dir: Path) -> Path:
 def _write_checkpoint_config(path: Path) -> Path:
     path.write_text(json.dumps({"llm": {"provider": "checkpoint"}}), encoding="utf-8")
     return path
+
+
+def _run_option_visibility() -> dict[str, bool]:
+    visibility: dict[str, bool] = {}
+    hints = get_type_hints(research_cli.run_command, include_extras=True)
+    for hint in hints.values():
+        for item in getattr(hint, "__metadata__", ()):
+            if not isinstance(item, OptionInfo):
+                continue
+            decls = [item.default, *(item.param_decls or ())]
+            for decl in decls:
+                if isinstance(decl, str) and decl.startswith("-"):
+                    visibility[decl] = not item.hidden
+    return visibility
 
 
 def test_doctor_can_emit_agent_readable_json(
@@ -176,16 +192,12 @@ def test_capabilities_json_describes_evidence_master_surface(
     )
 
 
-def test_run_help_exposes_profile_config_surface_not_legacy_overrides(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_run_command_exposes_profile_config_surface_not_legacy_overrides(
 ) -> None:
-    monkeypatch.setenv("COLUMNS", "120")
-    assert cli.main(["run", "--help"]) == 0
+    visibility = _run_option_visibility()
 
-    out = capsys.readouterr().out
     for expected in ("--topic", "--profile", "--config", "--env-file", "--json"):
-        assert expected in out
+        assert visibility[expected] is True
     for legacy_override in (
         "--search-limit",
         "--analysis-provider",
@@ -195,7 +207,7 @@ def test_run_help_exposes_profile_config_surface_not_legacy_overrides(
         "--assess-analysis-json",
         "--targeted-query",
     ):
-        assert legacy_override not in out
+        assert visibility[legacy_override] is False
 
 
 def test_hidden_run_overrides_remain_backward_compatible(
