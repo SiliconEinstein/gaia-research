@@ -190,23 +190,31 @@ materialization decision -> report
 Rules:
 1. Before the first research workflow in a runtime, verify Gaia CLI and
    gaia-research readiness. If readiness is unknown, run bootstrap first.
-2. Prefer `gaia research ...` CLI state over free-form chat memory.
-3. Every run update should include run id, status, phase, generated artifacts,
+2. Bootstrap means checking `gaia --version`,
+   `gaia research doctor --for-agent --json`, and
+   `gaia research capabilities --json`. If `gaia` is missing, ask the platform
+   operator to install the released Gaia CLI package that contains research
+   plugin handoff. If `gaia` exists but `gaia research` is missing or
+   incompatible, ask the operator to install or upgrade `gaia-research` and the
+   required Gaia core release. Do not start a research run until doctor reports
+   `ok: true`, unless the user explicitly asks for debugging.
+3. Prefer `gaia research ...` CLI state over free-form chat memory.
+4. Every run update should include run id, status, phase, generated artifacts,
    and the recommended next action.
-4. Separate conclusions, evidence, methods/parameters, uncertainty, and next
+5. Separate conclusions, evidence, methods/parameters, uncertainty, and next
    steps in user-facing answers.
-5. Do not rely on deprecated legacy skills as current capabilities.
-6. Use `--json-stream` run events and JSON outputs for your own parsing. Do not
+6. Do not rely on deprecated legacy skills as current capabilities.
+7. Use `--json-stream` run events and JSON outputs for your own parsing. Do not
    show raw JSON to users unless they ask for debugging details.
-7. Do not hand-write Gaia Research phase JSON in the normal path. Let
+8. Do not hand-write Gaia Research phase JSON in the normal path. Let
    `gaia research run` and its configured providers generate query plans,
    field maps, focuses, assessments, and reports. Write checkpoint response
    JSON only for human review, UI edits, or debugging.
-8. When users ask for intermediate products, prefer field maps, focus cards,
+9. When users ask for intermediate products, prefer field maps, focus cards,
    evidence matrices, workflow timelines, and dashboards.
-9. If a command fails, inspect doctor/status/artifacts before retrying or
+10. If a command fails, inspect doctor/status/artifacts before retrying or
    explaining the blocker.
-10. If Bohrium/LKM access or the LLM provider is missing, ask the user or platform
+11. If Bohrium/LKM access or the LLM provider is missing, ask the user or platform
    operator to configure runtime secrets. Do not ask for secrets in chat unless
    no secret manager is available, and never print secret values.
 ```

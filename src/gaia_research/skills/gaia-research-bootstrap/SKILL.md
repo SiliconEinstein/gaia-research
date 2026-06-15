@@ -23,16 +23,46 @@ Use this before the first Gaia Research workflow in a fresh agent runtime.
 
 ## If Gaia Is Missing
 
-Install released packages that satisfy the Bohrium agent requirements:
+Do not attempt a research run. Ask the platform operator to install a released
+Gaia CLI package that satisfies the Bohrium agent requirements:
 
 ```bash
 uv tool install "gaia-lang>=<minimum-release>"
+```
+
+Then install Gaia Research into the same runtime where `gaia` runs:
+
+```bash
 uv tool install "gaia-research>=<minimum-release>"
 ```
 
-Use the actual release versions from the deployment spec. Do not pin a Gaia
-main commit in a production Bohrium agent unless the user explicitly asks for a
+Use the actual release versions from the deployment spec. Production Bohrium
+agents should not pin a Gaia main commit unless the user explicitly asks for a
 pre-release test.
+
+## If `gaia research` Is Missing
+
+If `gaia --version` works but `gaia research doctor --for-agent --json` fails
+because the `research` command is missing, the runtime has Gaia CLI but lacks
+the research plugin handoff or the `gaia-research` plugin package.
+
+Ask the platform operator to install or upgrade both sides:
+
+```bash
+uv tool upgrade "gaia-lang>=<minimum-release>"
+uv tool install --force "gaia-research>=<minimum-release>"
+```
+
+After installation, rerun:
+
+```bash
+gaia --version
+gaia research doctor --for-agent --json
+gaia research capabilities --json
+```
+
+Do not fall back to deprecated legacy research skills when `gaia research` is
+missing.
 
 ## If Credentials Are Missing
 
