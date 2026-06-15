@@ -83,6 +83,25 @@ def _report_section_ref_keys(section: dict[str, object]) -> list[tuple[str, str]
     return keys
 
 
+def _report_section_focus_ids(section: dict[str, object]) -> list[str]:
+    focus_ids = section.get("focus_ids")
+    if not isinstance(focus_ids, list):
+        return []
+    values: list[str] = []
+    for focus_id in focus_ids:
+        if isinstance(focus_id, str) and focus_id and focus_id not in values:
+            values.append(focus_id)
+    return values
+
+
+def _assessment_focus_id(payload: dict[str, Any]) -> str | None:
+    focus = payload.get("focus")
+    if not isinstance(focus, dict):
+        return None
+    focus_id = focus.get("id")
+    return focus_id if isinstance(focus_id, str) and focus_id else None
+
+
 def _item_report_ref_keys(item: dict[str, Any]) -> set[tuple[str, str]]:
     keys: set[tuple[str, str]] = set()
     kind = item.get("kind")
@@ -362,39 +381,182 @@ def _collect_matching_citations(
     return matched
 
 
+def _collect_matching_focus_records(
+    payload: dict[str, Any],
+    *,
+    focus_ids: list[str],
+    focuses: list[dict[str, Any]],
+    seen_focuses: set[str],
+) -> None:
+    if not focus_ids:
+        return
+    payload_focuses = payload.get("focuses")
+    if not isinstance(payload_focuses, list):
+        return
+    for focus in payload_focuses:
+        if not isinstance(focus, dict):
+            continue
+        focus_id = focus.get("id")
+        if not isinstance(focus_id, str) or focus_id not in focus_ids:
+            continue
+        _append_unique_keyed_dict(focuses, focus, key=focus_id, seen=seen_focuses)
+
+
+def _append_unique_string(values: list[str], value: object) -> None:
+    if isinstance(value, str) and value and value not in values:
+        values.append(value)
+
+
+def _append_unique_strings(values: list[str], raw_values: object) -> None:
+    if not isinstance(raw_values, list):
+        return
+    for value in raw_values:
+        _append_unique_string(values, value)
+
+
+def _collect_focus_scoped_assessment(
+    payload: dict[str, Any],
+    *,
+    focus_ids: list[str],
+    focus_assessments: list[dict[str, Any]],
+    items: list[dict[str, Any]],
+    paper_leads: list[dict[str, Any]],
+    relations: list[dict[str, Any]],
+    citations: list[dict[str, Any]],
+    candidate_obligations: list[dict[str, Any]],
+    limitations: list[str],
+    next_queries: list[str],
+    seen_assessments: set[str],
+    seen_items: set[str],
+    seen_leads: set[str],
+    seen_relations: set[str],
+    seen_citations: set[str],
+    seen_obligations: set[str],
+) -> None:
+    if not focus_ids or payload.get("kind") != "assessment":
+        return
+    focus_id = _assessment_focus_id(payload)
+    if focus_id not in focus_ids:
+        return
+    assessment_key = focus_id or json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    _append_unique_keyed_dict(
+        focus_assessments,
+        {
+            "focus": payload.get("focus"),
+            "relations": payload.get("relations", []),
+            "candidate_obligations": payload.get("candidate_obligations", []),
+            "limitations": payload.get("limitations", []),
+            "next_queries": payload.get("next_queries", []),
+        },
+        key=assessment_key,
+        seen=seen_assessments,
+    )
+    for packet in _artifact_evidence_packets(payload):
+        packet_items = packet.get("items")
+        if isinstance(packet_items, list):
+            for item in packet_items:
+                if isinstance(item, dict):
+                    _append_unique_keyed_dict(
+                        items,
+                        item,
+                        key=_item_report_dedupe_key(item),
+                        seen=seen_items,
+                    )
+        packet_leads = packet.get("paper_leads")
+        if isinstance(packet_leads, list):
+            for lead in packet_leads:
+                if isinstance(lead, dict):
+                    _append_unique_keyed_dict(
+                        paper_leads,
+                        lead,
+                        key=_paper_lead_report_dedupe_key(lead),
+                        seen=seen_leads,
+                    )
+    for relation in payload.get("relations", []):
+        if isinstance(relation, dict):
+            _append_unique_dict(relations, relation, seen=seen_relations)
+    for citation in payload.get("citations", []):
+        if isinstance(citation, dict):
+            _append_unique_dict(citations, citation, seen=seen_citations)
+    for obligation in payload.get("candidate_obligations", []):
+        if isinstance(obligation, dict):
+            _append_unique_dict(candidate_obligations, obligation, seen=seen_obligations)
+    _append_unique_strings(limitations, payload.get("limitations"))
+    _append_unique_strings(next_queries, payload.get("next_queries"))
+
+
 def _collect_report_section_evidence(
     section: dict[str, object],
     *,
     artifact_paths: list[Path],
 ) -> dict[str, object]:
     ref_keys = set(_report_section_ref_keys(section))
+    focus_ids = _report_section_focus_ids(section)
     context: dict[str, object] = {
         "refs": [
             {"kind": kind, "id": ref_id} for kind, ref_id in _report_section_ref_keys(section)
         ],
+        "focus_ids": focus_ids,
+        "focuses": [],
+        "focus_assessments": [],
         "items": [],
         "paper_leads": [],
         "relations": [],
         "citations": [],
+        "candidate_obligations": [],
+        "limitations": [],
+        "next_queries": [],
         "missing_refs": [],
     }
-    if not ref_keys:
+    if not ref_keys and not focus_ids:
         return context
 
+    focuses = cast(list[dict[str, Any]], context["focuses"])
+    focus_assessments = cast(list[dict[str, Any]], context["focus_assessments"])
     items = cast(list[dict[str, Any]], context["items"])
     paper_leads = cast(list[dict[str, Any]], context["paper_leads"])
     relations = cast(list[dict[str, Any]], context["relations"])
     citations = cast(list[dict[str, Any]], context["citations"])
+    candidate_obligations = cast(list[dict[str, Any]], context["candidate_obligations"])
+    limitations = cast(list[str], context["limitations"])
+    next_queries = cast(list[str], context["next_queries"])
+    seen_focuses: set[str] = set()
+    seen_assessments: set[str] = set()
     seen_items: set[str] = set()
     seen_leads: set[str] = set()
     seen_relations: set[str] = set()
     seen_citations: set[str] = set()
+    seen_obligations: set[str] = set()
     matched_keys: set[tuple[str, str]] = set()
 
     for path in artifact_paths:
         if not path.exists():
             continue
         payload = _read_json_object_path(path)
+        _collect_matching_focus_records(
+            payload,
+            focus_ids=focus_ids,
+            focuses=focuses,
+            seen_focuses=seen_focuses,
+        )
+        _collect_focus_scoped_assessment(
+            payload,
+            focus_ids=focus_ids,
+            focus_assessments=focus_assessments,
+            items=items,
+            paper_leads=paper_leads,
+            relations=relations,
+            citations=citations,
+            candidate_obligations=candidate_obligations,
+            limitations=limitations,
+            next_queries=next_queries,
+            seen_assessments=seen_assessments,
+            seen_items=seen_items,
+            seen_leads=seen_leads,
+            seen_relations=seen_relations,
+            seen_citations=seen_citations,
+            seen_obligations=seen_obligations,
+        )
         for packet in _artifact_evidence_packets(payload):
             matched_keys.update(
                 _collect_matching_packet_records(

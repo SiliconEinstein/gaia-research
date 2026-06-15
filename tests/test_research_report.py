@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Any, cast
+
 from gaia_research.report import (
     render_final_research_report_markdown,
     render_markdown_with_research_citations,
     render_research_artifact_markdown,
 )
+from gaia_research.research_report_writing import _collect_report_section_evidence
 
 
 def test_report_renders_focus_synthesis_markdown() -> None:
@@ -148,6 +153,12 @@ def test_report_renders_assessment_artifact_with_final_report_renderer() -> None
                     "claim": "ASPREE 不支持老年人常规使用阿司匹林一级预防。",
                     "rationale": "无心血管获益且大出血增加。",
                     "epistemic_status": "candidate",
+                    "system": "healthy older adults",
+                    "condition": "primary prevention setting",
+                    "method": "randomized trial",
+                    "observable": "cardiovascular events and major hemorrhage",
+                    "certainty": "moderate",
+                    "scope_note": "仅限类似 ASPREE 的老年健康人群。",
                     "promotion_hint": "none",
                     "source_refs": [{"kind": "variable", "id": "v1"}],
                 }
@@ -208,6 +219,11 @@ def test_report_renders_assessment_artifact_with_final_report_renderer() -> None
     assert "系统误差来源,[1] 而不是统计噪声。" in markdown
     assert "## 证据概览" in markdown
     assert "反对常规使用" in markdown
+    assert "## Evidence Matrix" in markdown
+    assert "healthy older adults" in markdown
+    assert "randomized trial" in markdown
+    assert "moderate" in markdown
+    assert "Scope-limited" not in markdown
     assert "[variable:v1]" not in markdown
     assert "## 参考文献" in markdown
     assert "## Evidence Interpretation" not in markdown
@@ -341,3 +357,163 @@ def test_final_report_renders_academic_evidence_review_without_run_summary() -> 
     assert "[1] ASPREE trial. DOI: 10.1056/aspree." in markdown
     assert "ASPREE trial" in markdown
     assert "10.1056/aspree" in markdown
+
+
+def test_final_report_renders_evidence_matrix_grouped_by_focus() -> None:
+    markdown = render_final_research_report_markdown(
+        focus_artifacts=[
+            {
+                "kind": "focus_synthesis",
+                "focuses": [
+                    {
+                        "id": "mechanism",
+                        "question": "Which mechanism explains the observed property?",
+                    },
+                    {
+                        "id": "boundary",
+                        "question": "Where does the mechanism stop applying?",
+                    },
+                ],
+            }
+        ],
+        assessments=[
+            {
+                "kind": "assessment",
+                "focus": {"kind": "focus", "id": "mechanism"},
+                "citations": [],
+                "relations": [
+                    {
+                        "type": "supports",
+                        "claim": "Simulations support a carrier-mediated mechanism.",
+                        "rationale": "The model reproduces the measured trend.",
+                        "epistemic_status": "provisional",
+                        "system": "doped oxide",
+                        "condition": "low temperature",
+                        "method": "simulation",
+                        "observable": "transport coefficient",
+                        "certainty": "moderate",
+                        "promotion_hint": "none",
+                        "source_refs": [{"kind": "variable", "id": "v_mech"}],
+                    }
+                ],
+                "review": {
+                    "language": "en",
+                    "depth": "review",
+                    "summary": "Mechanism assessment.",
+                    "sections": [],
+                },
+                "candidate_obligations": [],
+            },
+            {
+                "kind": "assessment",
+                "focus": {"kind": "focus", "id": "boundary"},
+                "citations": [],
+                "relations": [
+                    {
+                        "type": "qualifies",
+                        "claim": "The mechanism is scope-limited at high disorder.",
+                        "rationale": "The evidence shows deviation under disorder.",
+                        "epistemic_status": "candidate",
+                        "system": "doped oxide",
+                        "condition": "high disorder",
+                        "method": "experiment",
+                        "observable": "transport coefficient",
+                        "certainty": "low",
+                        "promotion_hint": "none",
+                        "source_refs": [{"kind": "variable", "id": "v_boundary"}],
+                    }
+                ],
+                "review": {
+                    "language": "en",
+                    "depth": "review",
+                    "summary": "Boundary assessment.",
+                    "sections": [],
+                },
+                "candidate_obligations": [],
+            },
+        ],
+    )
+
+    assert "### mechanism: Which mechanism explains the observed property?" in markdown
+    assert "### boundary: Where does the mechanism stop applying?" in markdown
+    assert "Simulations support a carrier-mediated mechanism." in markdown
+    assert "The mechanism is scope-limited at high disorder." in markdown
+    assert "Scope-limited" in markdown
+
+
+def test_report_section_context_collects_focus_scoped_assessments(tmp_path: Path) -> None:
+    focus_path = tmp_path / "focus.json"
+    focus_path.write_text(
+        json.dumps(
+            {
+                "kind": "focus_synthesis",
+                "focuses": [
+                    {"id": "mechanism", "question": "Mechanism question?"},
+                    {"id": "boundary", "question": "Boundary question?"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assessment_path = tmp_path / "assessment.json"
+    assessment_path.write_text(
+        json.dumps(
+            {
+                "kind": "assessment",
+                "focus": {"kind": "focus", "id": "mechanism"},
+                "evidence_packet": {
+                    "items": [
+                        {
+                            "item_id": "v_mech",
+                            "kind": "variable",
+                            "id": "v_mech",
+                            "source": {"paper_id": "P_MECH", "paper_title": "Mechanism"},
+                        }
+                    ],
+                    "paper_leads": [{"paper_id": "P_MECH", "title": "Mechanism"}],
+                },
+                "relations": [
+                    {
+                        "type": "supports",
+                        "claim": "Mechanism claim.",
+                        "rationale": "Mechanism rationale.",
+                        "epistemic_status": "provisional",
+                        "promotion_hint": "none",
+                        "source_refs": [{"kind": "variable", "id": "v_mech"}],
+                    }
+                ],
+                "candidate_obligations": [
+                    {
+                        "kind": "needs_method_check",
+                        "content": "Check parameter sensitivity.",
+                        "source_refs": [{"kind": "variable", "id": "v_mech"}],
+                    }
+                ],
+                "limitations": ["Finite-size sensitivity."],
+                "next_queries": ["mechanism parameter sensitivity"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    context = _collect_report_section_evidence(
+        {
+            "id": "mechanism_section",
+            "focus_ids": ["mechanism"],
+            "evidence_refs": [],
+        },
+        artifact_paths=[focus_path, assessment_path],
+    )
+
+    assert context["focus_ids"] == ["mechanism"]
+    assert context["focuses"] == [{"id": "mechanism", "question": "Mechanism question?"}]
+    relations = cast(list[dict[str, Any]], context["relations"])
+    obligations = cast(list[dict[str, Any]], context["candidate_obligations"])
+    items = cast(list[dict[str, Any]], context["items"])
+    paper_leads = cast(list[dict[str, Any]], context["paper_leads"])
+    assert relations[0]["claim"] == "Mechanism claim."
+    assert obligations[0]["content"] == "Check parameter sensitivity."
+    assert context["limitations"] == ["Finite-size sensitivity."]
+    assert context["next_queries"] == ["mechanism parameter sensitivity"]
+    assert items[0]["id"] == "v_mech"
+    assert paper_leads[0]["paper_id"] == "P_MECH"

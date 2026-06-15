@@ -325,6 +325,21 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
                 "undercuts the focus"
             ),
             "epistemic_status": "candidate, provisional, or accepted",
+            "system": (
+                "optional studied system, object, population, model, material, dataset, "
+                "or setting to which the evidence applies"
+            ),
+            "condition": (
+                "optional boundary condition, experimental setting, regime, data split, "
+                "or scope constraint"
+            ),
+            "method": (
+                "optional evidence-producing method such as experiment, simulation, "
+                "theory, observation, benchmark, review, or mixed"
+            ),
+            "observable": "optional measured, inferred, or evaluated quantity",
+            "certainty": "optional evidence strength: high, moderate, low, or very_low",
+            "scope_note": "optional reader-facing note on where the relation applies",
             "promotion_hint": {
                 relation_type: sorted(hints)
                 for relation_type, hints in RELATION_PROMOTION_HINTS.items()
@@ -363,10 +378,20 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
             ),
         },
         "analysis_guidance": [
-            "Separate benefit endpoints from harm endpoints.",
-            "Distinguish support, opposition, qualification, and methodological undercutting.",
-            "Discuss population, endpoint, trial-era, and background-therapy heterogeneity.",
-            "Use absolute effects, NNT, and NNH when available.",
+            "Treat each relation as a cross-disciplinary evidence matrix row.",
+            (
+                "When available, fill system, condition, method, observable, certainty, "
+                "and scope_note so later reports can compare evidence across focuses."
+            ),
+            (
+                "Use qualifies for scope-limited or condition-dependent support, and "
+                "use undercuts for evidence that weakens the method, measurement, "
+                "assumption, or grounding behind a claim."
+            ),
+            (
+                "Discuss heterogeneity in systems, conditions, methods, observables, "
+                "datasets, models, samples, or regimes as appropriate to the field."
+            ),
             "Write compact contract-shaped JSON; do not emit Markdown or prose outside "
             "the JSON object.",
             (

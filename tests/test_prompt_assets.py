@@ -45,3 +45,41 @@ def test_unknown_research_phase_fails_clearly() -> None:
         assert "unknown research prompt phase" in str(exc)
     else:
         raise AssertionError("expected unknown prompt phase to fail")
+
+
+def test_report_prompts_encode_evidence_obligations_without_fixed_sections() -> None:
+    report_plan = load_research_phase_prompt("report_plan")
+    report_section = load_research_phase_prompt("report_section")
+    report_stitch = load_research_phase_prompt("report_stitch")
+
+    combined = "\n".join([report_plan, report_section, report_stitch])
+
+    for obligation in (
+        "current evidence position",
+        "scope and coverage",
+        "evidence basis",
+        "agreement, disagreement, or tension",
+        "uncertainty and limitations",
+        "next evidence need",
+    ):
+        assert obligation in combined
+
+    assert "Do not force the report into six fixed sections" in report_plan
+    assert "Do not introduce unassessed evidence as a strong conclusion" in report_section
+    assert "Do not drop evidence obligations" in report_stitch
+
+
+def test_prompts_treat_focuses_as_discussion_questions_and_assessment_as_matrix() -> None:
+    focus_prompt = load_research_phase_prompt("focus_analysis")
+    assess_prompt = load_research_phase_prompt("assess_analysis")
+    report_plan = load_research_phase_prompt("report_plan")
+    report_section = load_research_phase_prompt("report_section")
+    shape = load_research_output_shape("report_plan")
+
+    assert "report-level discussion question" in focus_prompt
+    assert "system, condition, method, observable" in assess_prompt
+    assert "evidence matrix row" in assess_prompt
+    assert "Synthesize across focuses" in report_plan
+    assert "not one section per focus" in report_plan
+    assert "relevant focus" in report_section
+    assert "focus_ids" in shape["sections_item_keys"]

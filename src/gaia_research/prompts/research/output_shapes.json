@@ -49,6 +49,12 @@
       "claim",
       "rationale",
       "epistemic_status",
+      "system",
+      "condition",
+      "method",
+      "observable",
+      "certainty",
+      "scope_note",
       "promotion_hint",
       "source_refs"
     ],
@@ -68,7 +74,7 @@
       "sections",
       "conclusion_prompt"
     ],
-    "sections_item_keys": ["id", "title", "purpose", "evidence_refs"]
+    "sections_item_keys": ["id", "title", "purpose", "focus_ids", "evidence_refs"]
   },
   "report_section": {
     "required_top_level_keys": ["section_id", "title", "markdown", "used_refs"],
