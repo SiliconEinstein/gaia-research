@@ -72,6 +72,48 @@ def test_assessment_relation_requires_epistemic_status() -> None:
         validate_assessment_artifact(artifact)
 
 
+def test_assessment_relation_accepts_cross_disciplinary_matrix_fields() -> None:
+    artifact = build_assessment_artifact(
+        focus={"kind": "focus", "id": "model_generalization"},
+        evidence_packet={
+            "items": [
+                {
+                    "item_id": "benchmark_1",
+                    "kind": "variable",
+                    "id": "benchmark_1",
+                    "source": {"paper_id": "P_BENCH", "paper_title": "Benchmark paper"},
+                }
+            ]
+        },
+        relations=[
+            _relation(
+                claim="Benchmark evidence qualifies claims about broad model generalization.",
+                system="vision-language models",
+                condition="out-of-distribution benchmark transfer",
+                method="benchmark",
+                observable="accuracy drop under distribution shift",
+                certainty="low",
+                scope_note="Applies to the evaluated benchmark family, not all deployment domains.",
+                source_refs=[{"kind": "variable", "id": "benchmark_1"}],
+            )
+        ],
+        candidate_obligations=[],
+    )
+
+    assert validate_assessment_artifact(artifact) is artifact
+
+
+def test_assessment_relation_rejects_invalid_certainty() -> None:
+    artifact = build_assessment_artifact(
+        focus={"kind": "focus", "id": "focus_1"},
+        evidence_packet={"items": []},
+        relations=[_relation(certainty="settled")],
+    )
+
+    with pytest.raises(AssessmentSchemaError, match="certainty"):
+        validate_assessment_artifact(artifact)
+
+
 def test_assessment_relation_requires_grounded_source_refs() -> None:
     artifact = build_assessment_artifact(
         focus={"kind": "focus", "id": "focus_1"},

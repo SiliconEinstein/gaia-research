@@ -75,6 +75,26 @@ def test_doctor_can_emit_agent_readable_json(
     assert payload["missing"] == []
 
 
+def test_doctor_reports_workspace_local_uv_cache_hint(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("GAIA_LKM_ACCESS_KEY", "bohrium-secret-value")
+    monkeypatch.setenv("GAIA_RESEARCH_LLM_MODEL", "openai/gpt-4.1-mini")
+    monkeypatch.setenv("GAIA_RESEARCH_LLM_API_BASE", "https://llm.example/v1")
+    monkeypatch.setenv("GAIA_RESEARCH_LLM_API_KEY", "llm-secret-value")
+
+    assert cli.main(["doctor", "--for-agent", "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    uv_cache_hint = payload["runtime_hints"]["uv_cache_dir"]
+    assert uv_cache_hint == {
+        "env_var": "UV_CACHE_DIR",
+        "recommended_for_sandbox": "$PWD/.uv-cache",
+        "reason": "Avoid macOS sandbox/TCC failures against the user's global uv cache.",
+    }
+
+
 def test_doctor_reports_external_credential_readiness_without_secret_values(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -354,4 +374,16 @@ def test_bootstrap_skill_names_lkm_and_llm_setup() -> None:
     assert "GAIA_RESEARCH_LLM_MODEL" in text
     assert "GAIA_RESEARCH_LLM_API_BASE" in text
     assert "GAIA_RESEARCH_LLM_API_KEY" in text
+    assert 'export UV_CACHE_DIR="$PWD/.uv-cache"' in text
     assert "LITELLM_PROXY_API_KEY" not in text
+
+
+def test_run_skill_names_workspace_local_uv_cache_workaround() -> None:
+    text = (
+        resources.files("gaia_research.skills")
+        .joinpath("gaia-research-run", "SKILL.md")
+        .read_text(encoding="utf-8")
+    )
+
+    assert 'export UV_CACHE_DIR="$PWD/.uv-cache"' in text
+    assert "Do not run `uv cache clean`" in text

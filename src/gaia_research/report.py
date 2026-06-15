@@ -827,6 +827,83 @@ def _append_relation_synthesis(
         lines.append("")
 
 
+def _relation_stance_label(value: object, *, zh: bool) -> str:
+    labels: dict[str, str] = {
+        "supports": "支持" if zh else "Supports",
+        "opposes": "反对" if zh else "Opposes",
+        "qualifies": "限定性支持" if zh else "Scope-limited",
+        "undercuts": "削弱方法基础" if zh else "Undercuts",
+        "background_for": "背景" if zh else "Background",
+        "needs_more_evidence": "证据不足" if zh else "Needs more evidence",
+    }
+    return labels.get(value, value) if isinstance(value, str) else ""
+
+
+def _append_evidence_matrix(
+    lines: list[str],
+    assessments: list[dict[str, Any]],
+    *,
+    context: dict[str, Any],
+    focus_questions: dict[str, str],
+    zh: bool,
+) -> None:
+    grouped_rows: list[tuple[str | None, list[dict[str, str]]]] = []
+    for assessment in assessments:
+        rows: list[dict[str, str]] = []
+        for relation in _dicts(assessment.get("relations")):
+            claim = _reader_text(relation.get("claim"), context)
+            if not claim:
+                continue
+            scope_values = [
+                _reader_text(relation.get("scope_note"), context),
+                _reader_text(relation.get("rationale"), context),
+            ]
+            scope_text = " ".join(value for value in scope_values if value)
+            rows.append(
+                {
+                    "Claim": claim,
+                    "System": _reader_text(relation.get("system"), context),
+                    "Condition": _reader_text(relation.get("condition"), context),
+                    "Method": _reader_text(relation.get("method"), context),
+                    "Observable": _reader_text(relation.get("observable"), context),
+                    "Stance": _relation_stance_label(relation.get("type"), zh=zh),
+                    "Certainty": _reader_text(relation.get("certainty"), context),
+                    "Epistemic Status": _reader_text(
+                        relation.get("epistemic_status"),
+                        context,
+                    ),
+                    "Scope / Limitations": scope_text,
+                }
+            )
+        if rows:
+            grouped_rows.append((_assessment_focus_id(assessment), rows))
+    if not grouped_rows:
+        return
+
+    columns = [
+        "Claim",
+        "System",
+        "Condition",
+        "Method",
+        "Observable",
+        "Stance",
+        "Certainty",
+        "Epistemic Status",
+        "Scope / Limitations",
+    ]
+    lines.extend(_section("Evidence Matrix"))
+    for focus_id, rows in grouped_rows:
+        if focus_id:
+            question = focus_questions.get(focus_id)
+            title = f"{focus_id}: {question}" if question else focus_id
+            lines.extend([f"### {_cell(title)}", ""])
+        lines.append("| " + " | ".join(columns) + " |")
+        lines.append("| " + " | ".join("---" for _ in columns) + " |")
+        for row in rows:
+            lines.append("| " + " | ".join(_cell(row[column]) for column in columns) + " |")
+        lines.append("")
+
+
 def _append_limitations_and_tests(
     lines: list[str],
     assessments: list[dict[str, Any]],
@@ -892,6 +969,13 @@ def render_final_research_report_markdown(
             include_title=len(assessments) > 1,
             zh=zh,
         )
+    _append_evidence_matrix(
+        lines,
+        assessments,
+        context=context,
+        focus_questions=focus_questions,
+        zh=zh,
+    )
     _append_relation_synthesis(lines, assessments, context=context, zh=zh)
     _append_limitations_and_tests(lines, assessments, context=context, zh=zh)
     rendered_citations = _render_citations(citations, language=language, context=context)

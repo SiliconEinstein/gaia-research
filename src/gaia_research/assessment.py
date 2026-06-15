@@ -18,6 +18,7 @@ RELATION_PROMOTION_HINTS: dict[str, set[str]] = {
 }
 
 VALID_RELATIONS = set(RELATION_PROMOTION_HINTS)
+VALID_CERTAINTY = {"high", "moderate", "low", "very_low"}
 VALID_PROMOTION_HINTS = {
     hint for allowed_hints in RELATION_PROMOTION_HINTS.values() for hint in allowed_hints
 }
@@ -680,6 +681,11 @@ def validate_assessment_relation(relation: dict[str, Any]) -> dict[str, Any]:
     _require_non_empty_string(relation, "rationale")
     _require_non_empty_string(relation, "epistemic_status")
     _validate_source_refs(relation.get("source_refs"))
+    certainty = relation.get("certainty")
+    if certainty is not None and certainty not in VALID_CERTAINTY:
+        raise AssessmentSchemaError(
+            f"certainty {certainty!r} is invalid; allowed: {sorted(VALID_CERTAINTY)}"
+        )
 
     hint = relation.get("promotion_hint", "none")
     if not isinstance(hint, str) or not hint:

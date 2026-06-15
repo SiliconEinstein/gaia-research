@@ -83,6 +83,24 @@ LLM provider:
 The doctor payload must report whether each prerequisite is configured, but must
 never include secret values.
 
+The doctor payload should also include non-secret runtime hints for known agent
+sandbox pitfalls. For macOS/CodeWhale uv cache failures, it should advertise:
+
+```json
+{
+  "runtime_hints": {
+    "uv_cache_dir": {
+      "env_var": "UV_CACHE_DIR",
+      "recommended_for_sandbox": "$PWD/.uv-cache"
+    }
+  }
+}
+```
+
+Agents should set the hinted workspace-local cache before rerunning a workflow
+that failed under `~/.cache/uv`; Gaia Research must not mutate the user's global
+uv cache automatically.
+
 Gaia Research intentionally ignores `LITELLM_PROXY_*`, `OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, and other provider-native variables for research workflow
 readiness. Those variables may exist for the host agent runtime, but the
