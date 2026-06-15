@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ResearchWorkflowProfile = Literal["evidence-assessment", "fast", "quick", "review", "deep"]
+ResearchWorkflowProfile = Literal["fast", "broad", "deep"]
 EvidenceSelectionMode = Literal["fast", "review"]
 AnalysisProvider = Literal["checkpoint", "command", "litellm"]
 
@@ -57,7 +57,7 @@ class LLMConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: AnalysisProvider = "checkpoint"
+    provider: AnalysisProvider = "litellm"
     model: str | None = None
     focus_model: str | None = None
     assess_model: str | None = None
@@ -72,7 +72,7 @@ class ResearchRunConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    profile: ResearchWorkflowProfile = "evidence-assessment"
+    profile: ResearchWorkflowProfile = "fast"
     search: SearchConfig = Field(default_factory=SearchConfig)
     focus: FocusConfig = Field(default_factory=FocusConfig)
     evidence: EvidenceConfig = Field(default_factory=EvidenceConfig)
@@ -82,11 +82,10 @@ class ResearchRunConfig(BaseModel):
 
 def profile_defaults(profile: str) -> ResearchRunConfig:
     """Return built-in defaults for a workflow profile."""
-    if profile == "evidence-assessment":
-        return ResearchRunConfig(profile="evidence-assessment")
     if profile == "fast":
         return ResearchRunConfig(
             profile="fast",
+            llm=LLMConfig(provider="litellm"),
             search=SearchConfig(limit=10),
             focus=FocusConfig(count=1),
             evidence=EvidenceConfig(
@@ -96,33 +95,23 @@ def profile_defaults(profile: str) -> ResearchRunConfig:
                 max_chains=6,
             ),
         )
-    if profile == "quick":
+    if profile == "broad":
         return ResearchRunConfig(
-            profile="quick",
-            search=SearchConfig(limit=10),
-            focus=FocusConfig(count=1),
-            evidence=EvidenceConfig(
-                selection_mode="fast",
-                max_items=12,
-                max_papers=6,
-                max_chains=6,
-            ),
-        )
-    if profile == "review":
-        return ResearchRunConfig(
-            profile="review",
-            search=SearchConfig(limit=10),
+            profile="broad",
+            llm=LLMConfig(provider="litellm"),
+            search=SearchConfig(limit=20),
             focus=FocusConfig(count=3),
             evidence=EvidenceConfig(
-                selection_mode="review",
-                max_items=32,
-                max_papers=12,
-                max_chains=12,
+                selection_mode="fast",
+                max_items=24,
+                max_papers=10,
+                max_chains=10,
             ),
         )
     if profile == "deep":
         return ResearchRunConfig(
             profile="deep",
+            llm=LLMConfig(provider="litellm"),
             search=SearchConfig(limit=20),
             focus=FocusConfig(count=5),
             evidence=EvidenceConfig(
@@ -132,7 +121,7 @@ def profile_defaults(profile: str) -> ResearchRunConfig:
                 max_chains=20,
             ),
         )
-    msg = "profile must be one of: evidence-assessment, fast, quick, review, deep"
+    msg = "profile must be one of: fast, broad, deep"
     raise ValueError(msg)
 
 

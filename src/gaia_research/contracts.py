@@ -135,6 +135,52 @@ def field_map_contract(*, language: str = "zh") -> dict[str, Any]:
     }
 
 
+def query_plan_contract(*, language: str = "zh") -> dict[str, Any]:
+    """Return the JSON contract for query-plan checkpoint responses."""
+    return {
+        "contract": "gaia.research.query_plan",
+        "schema_version": 1,
+        "language": language,
+        "purpose": (
+            "Document the response object that advances a query_plan checkpoint. "
+            "Agents may let the CLI apply default_action, or write "
+            "query_plan.response.json explicitly when they need custom broad queries."
+        ),
+        "checkpoint": {
+            "request_path": ".gaia/research/runs/<run-id>/checkpoints/query_plan.request.json",
+            "response_path": ".gaia/research/runs/<run-id>/checkpoints/query_plan.response.json",
+            "default_action": (
+                "When action is continue, the CLI uses the listed queries. If the list is "
+                "empty in an older checkpoint, it falls back to the run topic."
+            ),
+        },
+        "response_required_fields": {
+            "action": "continue",
+            "queries": "list[str] of broad live-search query families to run",
+        },
+        "response_optional_fields": {
+            "notes": "agent or human comments about query edits",
+            "source": "manual, default_action, or tool-generated",
+        },
+        "analysis_guidance": [
+            "Use 1-5 broad query families, not narrow answer-shaped queries.",
+            "Keep queries grounded in the user topic and suitable for LKM search.",
+            "Do not include API keys, private notes, or raw chain-of-thought.",
+        ],
+        "example": {
+            "schema_version": 1,
+            "checkpoint_id": "query_plan_001",
+            "action": "continue",
+            "queries": [
+                "aspirin primary prevention cardiovascular outcomes bleeding trial",
+                "aspirin primary prevention elderly ASPREE JPPP ARRIVE",
+            ],
+            "notes": "Broad coverage before focus selection.",
+            "source": "manual",
+        },
+    }
+
+
 def focus_contract(*, language: str = "zh") -> dict[str, Any]:
     """Return the JSON contract for LLM focus synthesis output."""
     return {
@@ -458,6 +504,8 @@ def propose_contract(*, language: str = "zh") -> dict[str, Any]:
 def research_contract(kind: str, *, language: str = "zh") -> dict[str, Any]:
     """Return one named research contract."""
     normalized = kind.strip().lower()
+    if normalized in {"query_plan", "query-plan", "queries", "search_plan"}:
+        return query_plan_contract(language=language)
     if normalized in {"field_map", "field-map", "map", "review_map"}:
         return field_map_contract(language=language)
     if normalized in {"focus", "focuses", "focus_synthesis"}:
@@ -466,7 +514,9 @@ def research_contract(kind: str, *, language: str = "zh") -> dict[str, Any]:
         return assess_contract(language=language)
     if normalized in {"propose", "proposal", "proposal_analysis"}:
         return propose_contract(language=language)
-    raise ResearchContractError("supported contracts are: field_map, focus, assess, propose")
+    raise ResearchContractError(
+        "supported contracts are: query_plan, field_map, focus, assess, propose"
+    )
 
 
 __all__ = [
@@ -476,6 +526,7 @@ __all__ = [
     "field_map_contract",
     "focus_contract",
     "propose_contract",
+    "query_plan_contract",
     "research_contract",
     "verify_core_contract",
 ]

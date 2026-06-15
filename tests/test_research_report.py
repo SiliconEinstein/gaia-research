@@ -47,6 +47,72 @@ def test_report_renders_focus_synthesis_markdown() -> None:
     assert "variable:v1" in markdown
 
 
+def test_report_renders_landscape_markdown_for_intermediate_review() -> None:
+    markdown = render_research_artifact_markdown(
+        {
+            "schema_version": 1,
+            "kind": "research_landscape",
+            "action": "explore.scan",
+            "target": "aspirin primary prevention",
+            "stats": {"raw_results": 2, "items": 1, "paper_leads": 1},
+            "query_provenance": [{"query": "aspirin primary prevention"}],
+            "paper_leads": [
+                {
+                    "paper_id": "P1",
+                    "title": "ASPREE trial",
+                    "year": 2018,
+                    "doi": "10.1056/aspree",
+                }
+            ],
+            "items": [
+                {
+                    "item_id": "v1",
+                    "kind": "variable",
+                    "content": "ASPREE reported no cardiovascular benefit.",
+                }
+            ],
+            "coverage_map": {"trial": 1},
+            "candidate_focuses": ["older adults net benefit"],
+            "notes": ["Breadth-first landscape."],
+        }
+    )
+
+    assert "# Research Landscape" in markdown
+    assert "aspirin primary prevention" in markdown
+    assert "ASPREE trial" in markdown
+    assert "older adults net benefit" in markdown
+
+
+def test_report_renders_field_map_markdown_for_intermediate_review() -> None:
+    markdown = render_research_artifact_markdown(
+        {
+            "schema_version": 1,
+            "kind": "field_map",
+            "domain_thesis": "Aspirin primary prevention depends on baseline risk.",
+            "buckets": [
+                {
+                    "id": "elderly_trials",
+                    "title": "Elderly trials",
+                    "role": "core evidence",
+                    "coverage_status": "covered",
+                    "recommended_queries": ["ASPREE absolute risk"],
+                }
+            ],
+            "controversy_axes": ["benefit versus bleeding"],
+            "coverage_gaps": [
+                {"kind": "subgroup", "description": "Need CAC-stratified evidence."}
+            ],
+            "recommended_expansions": ["aspirin CAC net benefit"],
+            "synthesis_notes": ["Map before focus selection."],
+        }
+    )
+
+    assert "# Research Field Map" in markdown
+    assert "elderly_trials" in markdown
+    assert "benefit versus bleeding" in markdown
+    assert "aspirin CAC net benefit" in markdown
+
+
 def test_report_renders_assessment_artifact_with_final_report_renderer() -> None:
     markdown = render_research_artifact_markdown(
         {

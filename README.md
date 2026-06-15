@@ -1,61 +1,23 @@
 # gaia-research
 
-Standalone research workflow package for Gaia.
+`gaia-research` provides Gaia's upper research workflows as an installable
+package and Gaia CLI plugin.
 
-This repository is being migrated toward ownership of Gaia's upper research
-workflows. Gaia core remains the language, package, LKM search, authoring,
-materialization, inquiry, and plugin substrate. Dependency direction is
-intentionally one-way:
+It turns a research topic into auditable artifacts and a report-ready result:
 
 ```text
-gaia-research -> gaia-lang
+topic
+  -> landscape
+  -> field map
+  -> focus selection
+  -> assessment
+  -> materialization decision
+  -> report
 ```
 
-Gaia core must not import `gaia_research`.
-
-## Current Scope And Correction
-
-Implemented in the first bridge milestone:
-
-- package-local run SDK and disk contract;
-- `.gaia/research/runs/<run-id>/` state, events, checkpoint, and final report
-  artifacts;
-- `gaia.cli_plugins` entry point for `gaia research`;
-- downstream contract tests against Gaia core public modules;
-- CI lint, typecheck, tests, and wheel build.
-
-The earlier `gaia-research review` bridge around Gaia core
-`gaia.engine.inquiry.review.run_review` was removed from the active CLI because
-it was not the research workflow parity target. The current parity target is the
-upper `gaia research ...` workflow from Gaia main, not the inquiry review
-bridge.
-
-This bridge milestone is not the completed research module split. The completed
-split requires this repository to own the existing upper report workflow that
-currently spans Gaia research and `gaia-lkm-explore` surfaces.
-
-Current migration target:
-
-- topic-driven report workflow;
-- landscape;
-- field map;
-- focus selection;
-- assessment/report-ready artifact;
-- materialization decision;
-- report.
-
-Not in the current migration target:
-
-- large-scale graph sessions;
-- long-running pause/resume graph expansion;
-- deep/broad continuous large-scale expansion policies.
-
-Those graph-session capabilities are follow-up work. The current milestone is
-report workflow parity, not graph-session expansion.
-
-Gaia core keeps primitives such as `gaia search lkm`, `gaia add`,
-`gaia inquiry`, `gaia author`, materialization, package checks, inference, and
-rendering. `gaia-research` owns the upper research workflow built from those
+Gaia core remains the primitive substrate for package loading, LKM search,
+authoring, materialization, inquiry state, checks, inference, and rendering.
+This package owns the research workflow orchestration built from those
 primitives.
 
 ## Install For Development
@@ -66,34 +28,88 @@ uv sync --extra dev
 
 The package depends on Gaia core as `gaia-lang`.
 
-## Documentation
+## CLI
 
-Workflow foundations live in [docs/foundations](docs/foundations/README.md).
-Keep them current with code changes that alter workflow semantics, artifact
-schemas, CLI behavior, or engine boundaries. Use
-[docs/execution-record.md](docs/execution-record.md) for PR learnings and
-tracking, not as the canonical design source.
-
-## Report-Run Status
-
-Inspect a report workflow run:
+Run readiness checks:
 
 ```bash
-uv run gaia-research status \
-  --path /path/to/workspace \
-  --run-id aspirin-fast
+uv run gaia-research doctor --for-agent --json
+uv run gaia-research capabilities --json
 ```
 
-Add `--json` for machine-readable status output.
+Start a research workflow:
 
-## Report-Run Artifacts
+```bash
+uv run gaia-research run <pkg> \
+  --topic "<research topic>" \
+  --profile fast \
+  --json-stream
+```
 
-Each report workflow run writes an observable envelope under the workspace:
+If credentials live in a local dotenv file, pass it explicitly:
+
+```bash
+uv run gaia-research run <pkg> \
+  --topic "<research topic>" \
+  --profile fast \
+  --env-file .env.local \
+  --json-stream
+```
+
+Inspect a run:
+
+```bash
+uv run gaia-research status <pkg> --run-id <run-id> --json
+uv run gaia-research artifacts <pkg> --run-id <run-id> --json
+```
+
+Render a generated artifact as Markdown:
+
+```bash
+uv run gaia-research render <pkg> --artifact <artifact-json>
+```
+
+When installed with a Gaia release that supports CLI plugin handoff, the same
+commands are available as:
+
+```bash
+gaia research doctor --for-agent --json
+gaia research capabilities --json
+gaia research run <pkg> --topic "<research topic>" --profile fast --json-stream
+```
+
+## Runtime Configuration
+
+Research runs that use the LiteLLM provider expect explicit Gaia Research
+environment variables:
+
+```text
+GAIA_RESEARCH_LLM_MODEL
+GAIA_RESEARCH_LLM_API_BASE
+GAIA_RESEARCH_LLM_API_KEY
+```
+
+LKM access must be available through either stored Gaia credentials or:
+
+```text
+GAIA_LKM_ACCESS_KEY
+```
+
+`doctor --for-agent --json` reports missing runtime requirements without
+printing secret values.
+
+## Artifacts
+
+Each run writes an observable envelope under the Gaia workspace:
 
 ```text
 <workspace>/.gaia/research/runs/<run-id>/
   state.json
   events.ndjson
+  searches/
+  analysis/
+  trace/
+  checkpoints/
   landscape/
   field_map/
   focuses/
@@ -102,38 +118,57 @@ Each report workflow run writes an observable envelope under the workspace:
   reports/
 ```
 
-`state.json` records status, phase, topic, profile, and artifact directories.
-`events.ndjson` records lifecycle events such as `run.created` and later stage
-events.
+`state.json` records the current status, phase, topic, profile, and artifact
+paths. `events.ndjson` records lifecycle and progress events. `status --json`
+includes recent events so agents can observe long-running workflows even when
+they cannot stream stdout directly.
 
-The old `.gaia/research_loop` path is not recreated.
+## Prompts
 
-## Contract Checks
+LLM prompt assets for workflow phases live under:
 
-Local verifier:
+```text
+src/gaia_research/prompts/research/
+```
+
+The provider layer loads these assets, combines them with live input payloads
+and output-shape hints, and calls the configured LLM provider. Python code
+remains responsible for JSON validation, grounding repair, artifact writing, and
+rendering.
+
+## Agent Skills
+
+The package exposes a `gaia.skills` entry point with thin agent-facing skills:
+
+```text
+gaia-research-bootstrap
+gaia-research-run
+gaia-research-status
+gaia-research-artifacts
+```
+
+These skills route agents to the CLI and presentation discipline. They do not
+duplicate the workflow engine.
+
+## Documentation
+
+Workflow foundations live in [docs/foundations](docs/foundations/README.md).
+Specs, plans, testing notes, and prior-art archives live under `docs/`.
+
+## Verification
+
+Run the local verifier before claiming completion:
+
+```bash
+scripts/audit_goal_a.sh
+```
+
+Useful focused checks:
 
 ```bash
 uv run pytest -q
 uv run ruff check src tests
 uv run mypy src tests
 uv build --wheel --out-dir dist
-scripts/smoke_installed_wheel.sh
+scripts/smoke_installed_wheel.sh dist
 ```
-
-To smoke-test a Gaia core branch before it reaches Gaia main, override the core
-dependency used by the installed-wheel verifier:
-
-```bash
-GAIA_CORE_SPEC="gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@codex/research-plugin-handoff" \
-  scripts/smoke_installed_wheel.sh
-```
-
-The test suite verifies:
-
-- `gaia-research` can import declared Gaia core public modules;
-- Gaia core import does not import `gaia_research`;
-- runtime Gaia package dependency metadata names only `gaia-lang`;
-- gaia-research source does not statically import Gaia core modules; the bridge
-  stays behind declared dynamic public surfaces;
-- the CLI plugin entry point is present in package metadata;
-- report-run artifacts are written under `.gaia/research/runs/**`.

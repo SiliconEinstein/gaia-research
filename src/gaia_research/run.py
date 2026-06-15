@@ -26,6 +26,7 @@ class ResearchRunStart:
     events_path: Path
     checkpoint_path: Path
     events: list[dict[str, Any]]
+    resumed: bool = False
 
 
 def _utcnow() -> str:
@@ -139,6 +140,38 @@ def start_research_run(
     checkpoint_path = checkpoint_dir / "query_plan.request.json"
     state_path = run_dir / "state.json"
 
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            state = {}
+        if not isinstance(state, dict):
+            state = {}
+        pending_checkpoint = state.get("pending_checkpoint")
+        if isinstance(pending_checkpoint, str) and pending_checkpoint.strip():
+            checkpoint_path = Path(pending_checkpoint)
+        phase = state.get("phase")
+        event = append_run_event(
+            events_path,
+            run_id=resolved_run_id,
+            event_type="run.resumed",
+            phase=str(phase) if isinstance(phase, str) and phase else "setup",
+            payload={
+                "run_dir": str(run_dir),
+                "state_path": str(state_path),
+                "pending_checkpoint": str(pending_checkpoint) if pending_checkpoint else None,
+            },
+        )
+        return ResearchRunStart(
+            run_id=resolved_run_id,
+            run_dir=run_dir,
+            state_path=state_path,
+            events_path=events_path,
+            checkpoint_path=checkpoint_path,
+            events=[event],
+            resumed=True,
+        )
+
     state = {
         "schema_version": RUN_SCHEMA_VERSION,
         "run_id": resolved_run_id,
@@ -189,7 +222,7 @@ def start_research_run(
             ],
             "default_action": {
                 "action": "continue",
-                "queries": [],
+                "queries": [topic],
             },
         }
         _write_json_atomic(checkpoint_path, checkpoint)

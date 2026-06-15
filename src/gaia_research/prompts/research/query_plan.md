@@ -1,0 +1,1 @@
+Generate 3-5 broad live-search queries for the topic. Cover distinct evidence families likely to support an autonomous review map: foundational theory, canonical models, methods/diagnostics, experiments where relevant, and recent controversies. Do not assess evidence yet.

@@ -9,6 +9,11 @@ The current acceptance boundary is
 Gaia core keeps primitives. `gaia-research` owns upper research workflows built
 from those primitives.
 
+Current foundation documents:
+
+- [Research Prompts](research-prompts.md): ownership, loading, and iteration
+  policy for `gaia research run` LLM prompts.
+
 Current milestone:
 
 ```text

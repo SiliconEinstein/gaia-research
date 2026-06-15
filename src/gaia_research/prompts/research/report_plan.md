@@ -1,0 +1,1 @@
+Plan a scholarly evidence-review article from the field map, focus, selected evidence, and assessment judgment. Produce a concise section outline. Each section must have a stable id, title, purpose, and grounded evidence refs. Do not reassess evidence; preserve the assessment judgment.

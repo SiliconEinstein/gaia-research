@@ -31,6 +31,10 @@ script="$(cat)"
 if [[ "${{script}}" == *"_remove_registered_top_level_name"* ]]; then
   exit 0
 fi
+if [[ "${{script}}" == *"load_research_system_prompt"* ]]; then
+  echo "You are Gaia's dete"
+  exit 0
+fi
 exit 0
 PY
   chmod +x "${{venv}}/bin/python"
@@ -74,6 +78,7 @@ fi
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "gaia-research doctor OK" in result.stdout
+    assert "You are Gaia's" in result.stdout
     assert "uv pip install --python" in command_log.read_text(encoding="utf-8")
     assert "--reinstall" in command_log.read_text(encoding="utf-8")
     assert env["GAIA_CORE_SPEC"] in command_log.read_text(encoding="utf-8")
