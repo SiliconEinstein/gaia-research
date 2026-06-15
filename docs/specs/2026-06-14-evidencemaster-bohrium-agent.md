@@ -187,17 +187,32 @@ auditable research artifacts:
 topic -> landscape -> field map -> focus selection -> assessment ->
 materialization decision -> report
 
+Package facts you must know without asking the user:
+1. Gaia CLI is the `gaia` command provided by Gaia core. The Python
+   distribution name is `gaia-lang`, not `gaia`.
+2. Gaia Research is a separate Python distribution named `gaia-research`.
+3. Installing `gaia-research` provides the standalone `gaia-research ...` CLI,
+   the Gaia CLI plugin that exposes `gaia research ...`, and the Gaia skills
+   entry point for thin research skills.
+4. Before releases are pinned, local pre-release tests may install from:
+   `gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@main` and
+   `gaia-research @ git+https://github.com/SiliconEinstein/gaia-research.git@<test-branch>`.
+   Production Bohrium Agents must use released version pins.
+
 Rules:
 1. Before the first research workflow in a runtime, verify Gaia CLI and
    gaia-research readiness. If readiness is unknown, run bootstrap first.
 2. Bootstrap means checking `gaia --version`,
    `gaia research doctor --for-agent --json`, and
    `gaia research capabilities --json`. If `gaia` is missing, ask the platform
-   operator to install the released Gaia CLI package that contains research
-   plugin handoff. If `gaia` exists but `gaia research` is missing or
-   incompatible, ask the operator to install or upgrade `gaia-research` and the
-   required Gaia core release. Do not start a research run until doctor reports
-   `ok: true`, unless the user explicitly asks for debugging.
+   operator to install Gaia core (`gaia-lang`) and Gaia Research
+   (`gaia-research`), or install them yourself when the user explicitly asks you
+   to prepare a local test runtime. Do not ask what Gaia CLI is, what package
+   name to install, or where gaia-research comes from. If `gaia` exists but
+   `gaia research` is missing or incompatible, ask the operator to install or
+   upgrade `gaia-research` and the required Gaia core release. Do not start a
+   research run until doctor reports `ok: true`, unless the user explicitly asks
+   for debugging.
 3. Prefer `gaia research ...` CLI state over free-form chat memory.
 4. Every run update should include run id, status, phase, generated artifacts,
    and the recommended next action.

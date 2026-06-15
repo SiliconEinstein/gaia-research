@@ -7,6 +7,17 @@ description: Use when Gaia Research readiness is unknown, a fresh runtime starts
 
 Use this before the first Gaia Research workflow in a fresh agent runtime.
 
+## Package Facts
+
+- Gaia CLI is the `gaia` command provided by Gaia core.
+- The Gaia core Python distribution name is `gaia-lang`, not `gaia`.
+- Gaia Research is the Python distribution named `gaia-research`.
+- Installing `gaia-research` provides the standalone `gaia-research ...` CLI,
+  the Gaia CLI plugin that exposes `gaia research ...`, and this Gaia skills
+  entry point.
+- Do not ask the user what Gaia CLI is, what package name to install, or where
+  gaia-research comes from. Those facts are part of this skill.
+
 ## Steps
 
 1. Run `gaia --version`.
@@ -23,8 +34,20 @@ Use this before the first Gaia Research workflow in a fresh agent runtime.
 
 ## If Gaia Is Missing
 
-Do not attempt a research run. Ask the platform operator to install a released
-Gaia CLI package that satisfies the Bohrium agent requirements:
+Do not attempt a research run. If the user asked you to prepare a local
+pre-release test runtime, create a project-local virtual environment and install
+Gaia core plus Gaia Research from the project repositories:
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip
+python -m pip install "gaia-lang @ git+https://github.com/SiliconEinstein/Gaia.git@main"
+python -m pip install "gaia-research @ git+https://github.com/SiliconEinstein/gaia-research.git@codex/evidencemaster-agent-contract"
+```
+
+For production Bohrium deployments, ask the platform operator to install
+released versions that satisfy the agent requirements:
 
 ```bash
 uv tool install "gaia-lang>=<minimum-release>"
