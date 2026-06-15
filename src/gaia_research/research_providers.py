@@ -665,6 +665,9 @@ def _compact_paper_lead(item: dict[str, object]) -> dict[str, object]:
         "queries": item.get("queries"),
         "variable_ids": _list_of_strings(item.get("variable_ids"))[:8],
         "result_count": item.get("result_count"),
+        "landscape_index": item.get("landscape_index"),
+        "source_landscape_action": item.get("source_landscape_action"),
+        "is_new": item.get("is_new"),
     }
 
 
@@ -688,6 +691,9 @@ def _compact_landscape_item(item: dict[str, object]) -> dict[str, object]:
         },
         "package_ref": package_ref,
         "provenance": item.get("provenance"),
+        "landscape_index": item.get("landscape_index"),
+        "source_landscape_action": item.get("source_landscape_action"),
+        "is_new": item.get("is_new"),
     }
 
 

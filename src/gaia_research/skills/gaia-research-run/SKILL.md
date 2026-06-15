@@ -16,7 +16,16 @@ knowledge package.
 3. Prefer the managed workflow: let Gaia Research generate and consume phase
    JSON through its configured providers. Do not hand-write analysis JSON or
    checkpoint responses in the normal path.
-4. Run:
+4. In local CodeWhale/macOS sandbox tests, set a workspace-local uv cache before
+   running Gaia Research if `UV_CACHE_DIR` is unset:
+
+```bash
+export UV_CACHE_DIR="$PWD/.uv-cache"
+```
+
+Do not run `uv cache clean` or mutate the user's global uv cache automatically.
+
+5. Run:
 
 ```bash
 gaia research run <pkg> --topic "<topic>" --profile fast --json-stream
@@ -39,10 +48,10 @@ environment only:
 gaia research run <pkg> --topic "<topic>" --profile fast --env-file <path> --json-stream
 ```
 
-5. Treat each stdout line as one NDJSON progress event. Capture `run_id`,
+6. Treat each stdout line as one NDJSON progress event. Capture `run_id`,
    `phase`, `run_dir`, `state_path`, `events_path`, generated artifact paths,
    and provider/search events as they arrive.
-6. Summarize the workflow state for the user and suggest the next status or
+7. Summarize the workflow state for the user and suggest the next status or
    artifacts command.
 
 ## Managed Path
@@ -108,6 +117,13 @@ state; it does not consume checkpoint responses.
 Prefer CLI state over free-form memory. If the command fails, inspect
 `gaia research doctor --for-agent --json` and `gaia research status` before
 retrying.
+
+If the command fails with `Operation not permitted` under `~/.cache/uv`, rerun
+with:
+
+```bash
+export UV_CACHE_DIR="$PWD/.uv-cache"
+```
 
 Do not tune per-run search, LLM, focus, or evidence flags from chat unless the
 user explicitly asks for low-level debugging. Put those settings in a profile

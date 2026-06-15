@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar
+import json
+from pathlib import Path
+from typing import Any, ClassVar, cast
 
 from gaia_research import research_providers
 
@@ -85,3 +87,67 @@ def test_litellm_env_kwargs_ignores_legacy_and_provider_native_keys(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-native-key")
 
     assert research_providers._litellm_env_kwargs() == {}
+
+
+def test_hydrated_selected_evidence_preserves_new_expansion_metadata(
+    tmp_path: Path,
+) -> None:
+    selected_evidence_path = tmp_path / "selected-evidence.json"
+    selected_evidence_path.write_text(
+        json.dumps(
+            {
+                "kind": "selected_evidence",
+                "schema_version": 1,
+                "evidence_packet": {
+                    "landscapes": [
+                        {
+                            "index": 0,
+                            "kind": "research_landscape",
+                            "action": "explore.expand",
+                        }
+                    ],
+                    "items": [
+                        {
+                            "kind": "variable",
+                            "id": "claim_expand",
+                            "variable_type": "claim",
+                            "content": "Focused expansion claim.",
+                            "source": {
+                                "paper_id": "P_EXPAND",
+                                "paper_title": "Expand paper",
+                            },
+                            "source_landscape_action": "explore.expand",
+                            "is_new": True,
+                        }
+                    ],
+                    "paper_leads": [
+                        {
+                            "paper_id": "P_EXPAND",
+                            "title": "Expand paper",
+                            "variable_ids": ["claim_expand"],
+                            "source_landscape_action": "explore.expand",
+                            "is_new": True,
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    hydrated = research_providers._hydrate_analysis_provider_input(
+        {
+            "phase": "assess_analysis",
+            "artifacts": [str(selected_evidence_path)],
+        }
+    )
+
+    artifact_payloads = cast(list[dict[str, Any]], hydrated["artifact_payloads"])
+    compact = cast(dict[str, Any], artifact_payloads[0]["json"])
+    evidence_packet = cast(dict[str, Any], compact["evidence_packet"])
+    items = cast(list[dict[str, Any]], evidence_packet["items"])
+    paper_leads = cast(list[dict[str, Any]], evidence_packet["paper_leads"])
+    assert items[0]["source_landscape_action"] == "explore.expand"
+    assert items[0]["is_new"] is True
+    assert paper_leads[0]["source_landscape_action"] == "explore.expand"
+    assert paper_leads[0]["is_new"] is True
