@@ -66,6 +66,34 @@ def _assessment_variable_ids(assessment: dict[str, Any] | None) -> set[str]:
     return variable_ids
 
 
+def _paper_id_from_item(item: dict[str, Any]) -> str | None:
+    source = item.get("source")
+    source_paper_id = source.get("paper_id") if isinstance(source, dict) else None
+    paper_id = item.get("paper_id") or source_paper_id
+    return paper_id if isinstance(paper_id, str) and paper_id else None
+
+
+def _assessment_grounded_paper_ids(
+    assessment: dict[str, Any] | None,
+    landscapes: list[dict[str, Any]],
+) -> set[str]:
+    if assessment is None:
+        return set()
+    paper_ids = {
+        paper_id
+        for variable_id, paper_id in _paper_ids_by_variable(landscapes).items()
+        if variable_id in _assessment_variable_ids(assessment)
+    }
+    evidence_packet = _dict(assessment.get("evidence_packet"))
+    for item in _list(evidence_packet.get("items")):
+        if not isinstance(item, dict):
+            continue
+        paper_id = _paper_id_from_item(item)
+        if paper_id is not None:
+            paper_ids.add(paper_id)
+    return paper_ids
+
+
 def _relation_type_counts(assessment: dict[str, Any] | None) -> dict[str, int]:
     counts: dict[str, int] = {}
     if assessment is None:
@@ -186,18 +214,15 @@ def _query_novelty_dimension(
     previous_ids = _paper_ids(previous_landscapes)
     new_ids = current_ids - previous_ids
     ratio = len(new_ids) / max(len(current_ids), 1)
-    cited_paper_ids = {
-        paper_id
-        for variable_id, paper_id in _paper_ids_by_variable(landscapes).items()
-        if variable_id in _assessment_variable_ids(assessment)
-    }
-    grounding_ratio = len(cited_paper_ids) / max(len(current_ids), 1)
+    cited_paper_ids = _assessment_grounded_paper_ids(assessment, landscapes)
+    grounded_new_ids = cited_paper_ids.intersection(new_ids)
+    grounding_ratio = len(grounded_new_ids) / max(len(new_ids), 1)
     metrics = {
         "current_paper_leads": len(current_ids),
         "previous_paper_leads": len(previous_ids),
         "new_paper_leads": len(new_ids),
         "new_paper_lead_ratio": round(ratio, 4),
-        "assessment_grounded_paper_leads": len(cited_paper_ids),
+        "assessment_grounded_paper_leads": len(grounded_new_ids),
         "assessment_grounded_paper_lead_ratio": round(grounding_ratio, 4),
     }
     if not landscapes or not previous_landscapes:

@@ -150,3 +150,28 @@ def test_stop_flags_high_novelty_when_new_leads_do_not_ground_assessment() -> No
     assert artifact["metrics"]["assessment_grounded_paper_lead_ratio"] == 0.25
     assert artifact["dimensions"]["query_novelty"]["status"] == "weak"
     assert artifact["recommendation"] == "ready_for_human_review"
+
+
+def test_stop_counts_grounded_new_paper_leads_from_assessment_packet() -> None:
+    assessment = _assessment(relation_types=["supports", "opposes"])
+    assessment["evidence_packet"] = {
+        "items": [
+            {
+                "id": "selected_new_claim",
+                "kind": "variable",
+                "source": {"paper_id": "P_NEW_1"},
+            }
+        ]
+    }
+
+    artifact = evaluate_research_stop(
+        focus_artifact=_focus_artifact(),
+        assessment=assessment,
+        landscapes=[_landscape("P_NEW_1", "P_NEW_2")],
+        previous_landscapes=[_landscape("P_OLD")],
+        min_new_lead_ratio=0.5,
+    )
+
+    assert artifact["metrics"]["new_paper_leads"] == 2
+    assert artifact["metrics"]["assessment_grounded_paper_leads"] == 1
+    assert artifact["metrics"]["assessment_grounded_paper_lead_ratio"] == 0.5

@@ -96,11 +96,13 @@ def _evidence_packet_from_landscapes(landscapes: list[dict[str, Any]]) -> dict[s
     paper_leads: list[dict[str, Any]] = []
     landscape_refs: list[dict[str, Any]] = []
     for landscape_index, landscape in enumerate(landscapes):
+        action = landscape.get("action")
+        is_new = action == "explore.expand"
         landscape_refs.append(
             {
                 "index": landscape_index,
                 "kind": landscape.get("kind"),
-                "action": landscape.get("action"),
+                "action": action,
                 "target": landscape.get("target"),
             }
         )
@@ -111,12 +113,16 @@ def _evidence_packet_from_landscapes(landscapes: list[dict[str, Any]]) -> dict[s
             item.setdefault("item_id", _stable_item_id(item, fallback=f"item_{len(items)}"))
             item.setdefault("display_index", len(items))
             item["landscape_index"] = landscape_index
+            item["source_landscape_action"] = action
+            item["is_new"] = is_new
             items.append(item)
         for raw_lead in landscape.get("paper_leads", []):
             if not isinstance(raw_lead, dict):
                 continue
             lead = dict(raw_lead)
             lead["landscape_index"] = landscape_index
+            lead["source_landscape_action"] = action
+            lead["is_new"] = is_new
             paper_leads.append(lead)
     return {"landscapes": landscape_refs, "items": items, "paper_leads": paper_leads}
 
