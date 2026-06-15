@@ -181,6 +181,15 @@ def _doctor_payload(*, ok: bool, missing: list[str]) -> dict[str, object]:
             "lkm_access_key": lkm_status,
             "llm_provider": llm_status,
         },
+        "runtime_hints": {
+            "uv_cache_dir": {
+                "env_var": "UV_CACHE_DIR",
+                "recommended_for_sandbox": "$PWD/.uv-cache",
+                "reason": (
+                    "Avoid macOS sandbox/TCC failures against the user's global uv cache."
+                ),
+            }
+        },
         "missing": resolved_missing,
     }
 

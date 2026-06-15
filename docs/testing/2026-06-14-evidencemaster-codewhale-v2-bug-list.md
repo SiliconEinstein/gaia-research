@@ -16,7 +16,7 @@
 
 | # | 问题 | 严重程度 | 状态 |
 |---|------|----------|------|
-| 1 | macOS 安全框架阻止 `uv` 访问用户缓存 | 🟡 中 | 已绕过，待根治 |
+| 1 | macOS 安全框架阻止 `uv` 访问用户缓存 | 🟡 中 | 已缓解，doctor/skill 已提示 |
 | 2 | Checkpoint 推进机制不明显 | 🟡 中 | 已找到方法，待文档化 |
 | 3 | `approval` 配置字段名不确定 | 🟡 中 | 待确认 |
 
@@ -40,19 +40,22 @@ shell 进程的访问。
 CodeWhale 的 shell 进程运行在受 macOS 安全框架约束的环境中，对用户家目录下的
 `~/.cache/uv/` 没有写入权限。删除缓存（`rm -rf ~/.cache/uv`）同样被拦截。
 
-### 临时解决
+### 解决
 
 ```bash
-export UV_CACHE_DIR=/private/tmp/evidencemaster-agent-test/.uv-cache
+export UV_CACHE_DIR="$PWD/.uv-cache"
 ```
 
-将 `uv` 缓存重定向到工作区内的可写路径。
+将 `uv` 缓存重定向到工作区内的可写路径。`doctor --for-agent --json`
+现在通过 `runtime_hints.uv_cache_dir` 暴露该建议，`gaia-research-bootstrap`
+和 `gaia-research-run` skills 也要求 agent 在本地 CodeWhale/macOS sandbox
+测试中优先使用 workspace-local uv cache。
 
-### 建议根治
+### 处理原则
 
-1. 在 CodeWhale 项目配置中预设环境变量，避免每次手动 export
-2. Gaia 端检测 macOS 沙箱环境，自动将 `uv` 缓存切换到包内 `.gaia/` 目录
-3. 或在 README 的 "Runtime Configuration" 中注明此事项
+Gaia Research 不自动运行 `uv cache clean`，也不清理或探测用户全局
+`~/.cache/uv`。这样可以避免 agent runtime 在 macOS TCC/Sandbox 下继续触碰
+受限文件。
 
 ---
 

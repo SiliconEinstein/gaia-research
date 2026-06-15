@@ -31,6 +31,14 @@ Use this before the first Gaia Research workflow in a fresh agent runtime.
 6. Confirm the LLM provider is configured through the explicit Gaia Research
    namespace: `GAIA_RESEARCH_LLM_MODEL`, `GAIA_RESEARCH_LLM_API_BASE`, and
    `GAIA_RESEARCH_LLM_API_KEY`.
+7. For local CodeWhale/macOS sandbox tests, prefer a workspace-local uv cache
+   before any command that may invoke package materialization:
+
+```bash
+export UV_CACHE_DIR="$PWD/.uv-cache"
+```
+
+Do not run `uv cache clean` or mutate the user's global uv cache automatically.
 
 ## If Gaia Is Missing
 
@@ -121,6 +129,13 @@ the host agent itself, but Gaia Research treats them as unrelated.
 For local testing, put these values in a dotenv file and pass
 `--env-file <path>` to both `gaia research doctor` and `gaia research run`.
 Never print secret values back to the user.
+
+If `uv` reports `Operation not permitted` under `~/.cache/uv` in a sandboxed
+macOS runtime, set a workspace-local cache before rerunning:
+
+```bash
+export UV_CACHE_DIR="$PWD/.uv-cache"
+```
 
 ## User-Facing Output
 
