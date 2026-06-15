@@ -177,8 +177,10 @@ def test_capabilities_json_describes_evidence_master_surface(
 
 
 def test_run_help_exposes_profile_config_surface_not_legacy_overrides(
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setenv("COLUMNS", "120")
     assert cli.main(["run", "--help"]) == 0
 
     out = capsys.readouterr().out
