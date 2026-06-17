@@ -116,7 +116,7 @@ def test_selected_evidence_marks_expand_records_as_new() -> None:
     assert items_by_id["claim_scan"]["is_new"] is False
 
 
-def test_selected_evidence_prefers_focus_matching_items_and_plans_deep_pull() -> None:
+def test_selected_evidence_prefers_focus_matching_items_and_plans_corpus_pull() -> None:
     artifact = build_selected_evidence_artifact(
         focus={"kind": "focus", "id": "weak-first-order", "title": "weak first order"},
         landscapes=[_landscape()],
@@ -146,16 +146,152 @@ def test_selected_evidence_prefers_focus_matching_items_and_plans_deep_pull() ->
         },
     ]
     assert artifact["materialization_plan"] == {
-        "paper_ids": ["P_OPPOSE", "P_SUPPORT"],
+        "paper_ids": ["P_SUPPORT", "P_OPPOSE", "P_BACKGROUND"],
         "claim_ids": [],
-        "chain_claim_ids": ["claim_oppose", "claim_support"],
+        "chain_claim_ids": [],
+        "package_refs": [
+            "lkm:bohrium:paper:P_SUPPORT",
+            "lkm:bohrium:paper:P_OPPOSE",
+            "lkm:bohrium:paper:P_BACKGROUND",
+        ],
     }
+    assert [anchor["id"] for anchor in artifact["anchors"]] == ["claim_oppose", "claim_support"]
     assert artifact["selection"]["items_considered"] == 3
     assert artifact["selection"]["unique_items_considered"] == 3
     assert artifact["selection"]["items_selected"] == 2
     assert artifact["selection_policy"]["mode"] == "fast"
     assert artifact["coverage_audit"]["selected_unique_papers"] == 2
     assert len(artifact["omitted_relevant_evidence"]) == 1
+
+
+def test_materialization_plan_uses_full_candidate_corpus_not_assessment_budget() -> None:
+    artifact = build_selected_evidence_artifact(
+        focus={"kind": "focus", "id": "weak-first-order", "title": "weak first order"},
+        landscapes=[_landscape()],
+        max_items=1,
+        max_papers=1,
+        max_chains=1,
+    )
+
+    assert [item["id"] for item in artifact["evidence_packet"]["items"]] == ["claim_oppose"]
+    assert artifact["selection"]["items_selected"] == 1
+    assert artifact["selection"]["paper_leads_selected"] == 1
+    assert artifact["materialization_plan"] == {
+        "paper_ids": ["P_SUPPORT", "P_OPPOSE", "P_BACKGROUND"],
+        "claim_ids": [],
+        "chain_claim_ids": [],
+        "package_refs": [
+            "lkm:bohrium:paper:P_SUPPORT",
+            "lkm:bohrium:paper:P_OPPOSE",
+            "lkm:bohrium:paper:P_BACKGROUND",
+        ],
+    }
+    assert artifact["corpus"] == {
+        "candidate_items": 3,
+        "unique_candidate_items": 3,
+        "candidate_paper_leads": 3,
+        "candidate_papers": 3,
+        "materialization_policy": "all_candidate_papers",
+        "materialization_candidate_papers": 3,
+    }
+
+
+def test_selection_tracks_package_backed_anchors_and_uses_paper_only_materialization(
+) -> None:
+    landscape = {
+        "kind": "research_landscape",
+        "action": "explore.expand",
+        "items": [
+            {
+                "kind": "variable",
+                "id": "claim_a",
+                "variable_type": "claim",
+                "content": "Weak first order evidence from drift.",
+                "source": {"paper_id": "P_SHARED", "paper_title": "Shared paper"},
+                "provenance": {"result_id": "lkm:bohrium:claim_a"},
+            },
+            {
+                "kind": "variable",
+                "id": "claim_b",
+                "variable_type": "claim",
+                "content": "Continuous interpretation from scaling collapse.",
+                "source": {"paper_id": "P_SHARED", "paper_title": "Shared paper"},
+                "provenance": {"result_id": "lkm:bohrium:claim_b"},
+            },
+            {
+                "kind": "variable",
+                "id": "question_c",
+                "variable_type": "question",
+                "content": "Which diagnostics distinguish the order?",
+                "source": {"paper_id": "P_OTHER", "paper_title": "Other paper"},
+                "provenance": {"result_id": "lkm:bohrium:question_c"},
+            },
+        ],
+        "paper_leads": [
+            {
+                "paper_id": "P_SHARED",
+                "title": "Shared paper",
+                "variable_ids": ["claim_a", "claim_b"],
+            },
+            {"paper_id": "P_OTHER", "title": "Other paper", "variable_ids": ["question_c"]},
+        ],
+    }
+
+    artifact = build_selected_evidence_artifact(
+        focus={"kind": "focus", "id": "order", "title": "weak continuous order"},
+        landscapes=[landscape],
+        lkm_index="bohrium",
+        max_items=3,
+        max_papers=2,
+    )
+
+    assert artifact["materialization_plan"] == {
+        "paper_ids": ["P_SHARED", "P_OTHER"],
+        "claim_ids": [],
+        "chain_claim_ids": [],
+        "package_refs": ["lkm:bohrium:paper:P_SHARED", "lkm:bohrium:paper:P_OTHER"],
+    }
+    assert artifact["anchors"] == [
+        {
+            "id": "claim_a",
+            "hit_id": "lkm:bohrium:claim_a",
+            "node_id": "claim_a",
+            "kind": "claim",
+            "paper_id": "P_SHARED",
+            "source_ref": "lkm:bohrium:paper:P_SHARED",
+            "import_name": None,
+            "symbol": None,
+            "ref": None,
+            "status": "pending_materialization",
+            "landscape_index": 0,
+        },
+        {
+            "id": "claim_b",
+            "hit_id": "lkm:bohrium:claim_b",
+            "node_id": "claim_b",
+            "kind": "claim",
+            "paper_id": "P_SHARED",
+            "source_ref": "lkm:bohrium:paper:P_SHARED",
+            "import_name": None,
+            "symbol": None,
+            "ref": None,
+            "status": "pending_materialization",
+            "landscape_index": 0,
+        },
+        {
+            "id": "question_c",
+            "hit_id": "lkm:bohrium:question_c",
+            "node_id": "question_c",
+            "kind": "question",
+            "paper_id": "P_OTHER",
+            "source_ref": "lkm:bohrium:paper:P_OTHER",
+            "import_name": None,
+            "symbol": None,
+            "ref": None,
+            "status": "pending_materialization",
+            "landscape_index": 0,
+        },
+    ]
 
 
 def test_review_selection_uses_wider_paper_diverse_packet_and_audit() -> None:
@@ -218,6 +354,7 @@ def test_review_selection_uses_wider_paper_diverse_packet_and_audit() -> None:
         "max_papers": 4,
         "max_chains": 4,
         "max_omitted": 2,
+        "materialization_policy": "all_candidate_papers",
     }
     assert artifact["selection"]["items_considered"] == 9
     assert artifact["selection"]["unique_items_considered"] == 8

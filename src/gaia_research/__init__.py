@@ -18,6 +18,7 @@ from gaia_research.assessment import (
     validate_assessment_grounding,
     validate_assessment_relation,
 )
+from gaia_research.budgets import ResearchRunBudget
 from gaia_research.contracts import (
     CORE_PUBLIC_SURFACES,
     ResearchContractError,
@@ -31,6 +32,7 @@ from gaia_research.contracts import (
 from gaia_research.evidence_selection import (
     SELECTED_EVIDENCE_SCHEMA_VERSION,
     build_selected_evidence_artifact,
+    hydrate_selected_evidence_with_anchor_resolution,
 )
 from gaia_research.field_map import (
     FIELD_MAP_SCHEMA_VERSION,
@@ -43,7 +45,14 @@ from gaia_research.focus import (
     build_focus_synthesis_artifact,
     validate_focus_synthesis_artifact,
 )
+from gaia_research.graph_assets import (
+    GRAPH_ASSET_SUCCESS_SCHEMA_VERSION,
+    evaluate_graph_asset_success,
+    plan_obligation_decision,
+    project_evidence_matrix_rows,
+)
 from gaia_research.landscape import ScanBatch, build_research_landscape
+from gaia_research.obligations import derive_workflow_obligations
 from gaia_research.orchestrator_ports import (
     ResearchOrchestratorError,
     ResearchOrchestratorPaused,
@@ -63,8 +72,14 @@ from gaia_research.report import (
 )
 from gaia_research.run_config import (
     ResearchRunConfig,
+    SchedulerConfig,
     load_research_run_config_file,
     resolve_research_run_config,
+)
+from gaia_research.scheduler import (
+    DEFAULT_ACTION_GUARDRAILS,
+    ResearchActionGuardrails,
+    plan_obligation_schedule,
 )
 from gaia_research.source_packages import (
     ResearchSourcePackage,
@@ -80,6 +95,7 @@ from gaia_research.sync import (
     sync_landscape_artifact,
     sync_materialization,
     sync_proposal_artifact,
+    sync_research_obligations,
 )
 from gaia_research.workflow_state import (
     ReportRunHandle,
@@ -94,7 +110,9 @@ from gaia_research.workflow_state import (
 
 __all__ = [
     "CORE_PUBLIC_SURFACES",
+    "DEFAULT_ACTION_GUARDRAILS",
     "FIELD_MAP_SCHEMA_VERSION",
+    "GRAPH_ASSET_SUCCESS_SCHEMA_VERSION",
     "SELECTED_EVIDENCE_SCHEMA_VERSION",
     "STOP_SCHEMA_VERSION",
     "AssessmentSchemaError",
@@ -103,18 +121,21 @@ __all__ = [
     "ProposalSchemaError",
     "ReportRunHandle",
     "ReportRunState",
+    "ResearchActionGuardrails",
     "ResearchContractError",
     "ResearchOrchestratorError",
     "ResearchOrchestratorPaused",
     "ResearchOrchestratorRuntime",
     "ResearchPackage",
     "ResearchReportError",
+    "ResearchRunBudget",
     "ResearchRunConfig",
     "ResearchSourcePackage",
     "ResearchSyncResult",
     "ResearchSyncSourceError",
     "ResearchTargetError",
     "ScanBatch",
+    "SchedulerConfig",
     "append_research_event",
     "assess_contract",
     "attach_source_package_refs",
@@ -127,13 +148,19 @@ __all__ = [
     "build_research_landscape",
     "build_selected_evidence_artifact",
     "create_report_run",
+    "derive_workflow_obligations",
     "ensure_research_manifest",
+    "evaluate_graph_asset_success",
     "evaluate_research_stop",
     "field_map_contract",
     "focus_contract",
+    "hydrate_selected_evidence_with_anchor_resolution",
     "load_research_package",
     "load_research_run_config_file",
     "materialize_landscape_source_package",
+    "plan_obligation_decision",
+    "plan_obligation_schedule",
+    "project_evidence_matrix_rows",
     "propose_contract",
     "read_events",
     "read_state",
@@ -150,6 +177,7 @@ __all__ = [
     "sync_landscape_artifact",
     "sync_materialization",
     "sync_proposal_artifact",
+    "sync_research_obligations",
     "validate_assessment_artifact",
     "validate_assessment_grounding",
     "validate_assessment_relation",

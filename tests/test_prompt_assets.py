@@ -79,7 +79,29 @@ def test_prompts_treat_focuses_as_discussion_questions_and_assessment_as_matrix(
     assert "report-level discussion question" in focus_prompt
     assert "system, condition, method, observable" in assess_prompt
     assert "evidence matrix row" in assess_prompt
+    assert "new_claims" in assess_prompt
+    assert "existing-existing" in assess_prompt
+    assert "existing-new" in assess_prompt
+    assert "lkm:<package>::<label>" in assess_prompt
     assert "Synthesize across focuses" in report_plan
     assert "not one section per focus" in report_plan
     assert "relevant focus" in report_section
     assert "focus_ids" in shape["sections_item_keys"]
+
+
+def test_assessment_prompt_distinguishes_relation_endpoints_from_provenance() -> None:
+    assess_prompt = load_research_phase_prompt("assess_analysis")
+    shape = load_research_output_shape("assess_analysis")
+
+    assert "claim_refs are relation endpoints" in assess_prompt
+    assert "source_refs are provenance" in assess_prompt
+    endpoint_rule = (
+        "Every candidate relation with concrete endpoints must include at least two claim_refs"
+    )
+    assert endpoint_rule in assess_prompt
+    assert "Do not rely on source_refs to supply missing relation endpoints" in assess_prompt
+    assert "Only put a package_ref in claim_refs when that package_ref is a claim endpoint" in (
+        assess_prompt
+    )
+    assert "relations_claim_refs_note" in shape
+    assert "source_refs do not replace claim_refs" in shape["relations_claim_refs_note"]

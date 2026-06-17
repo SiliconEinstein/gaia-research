@@ -14,17 +14,24 @@ from gaia_research import (
     ResearchOrchestratorPaused,
     ResearchOrchestratorRuntime,
     ResearchPackage,
+    ResearchRunBudget,
     ScanBatch,
     build_assessment_from_analysis,
     build_field_map_artifact,
     build_focus_synthesis_artifact,
     build_research_landscape,
     build_selected_evidence_artifact,
+    derive_workflow_obligations,
+    evaluate_graph_asset_success,
     evaluate_research_stop,
+    hydrate_selected_evidence_with_anchor_resolution,
+    plan_obligation_decision,
+    plan_obligation_schedule,
     render_final_research_report_markdown,
     research_contract,
+    sync_research_obligations,
 )
-from gaia_research.run import ResearchRunStart
+from gaia_research.run import REPORT_OUTPUT_CONTRACT, ResearchRunStart
 
 
 def _read_trace_records(trace_dir: Path) -> list[dict[str, object]]:
@@ -120,6 +127,29 @@ def _relation_type_counts(relations: object) -> dict[str, int]:
         if isinstance(relation_type, str) and relation_type:
             counts[relation_type] = counts.get(relation_type, 0) + 1
     return counts
+
+
+def _run_state_artifacts(run: ResearchRunStart) -> dict[str, object]:
+    try:
+        state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    artifacts = state.get("artifacts") if isinstance(state, dict) else None
+    return dict(artifacts) if isinstance(artifacts, dict) else {}
+
+
+def _run_includes_report(run: ResearchRunStart) -> bool:
+    try:
+        state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return True
+    if not isinstance(state, dict):
+        return True
+    output_contracts = state.get("output_contracts")
+    if isinstance(output_contracts, list):
+        return REPORT_OUTPUT_CONTRACT in output_contracts
+    legacy_value = state.get("requires_report")
+    return legacy_value if isinstance(legacy_value, bool) else True
 
 
 def _count_payload_items(payload: dict[str, object], key: str) -> int:
@@ -616,11 +646,18 @@ def _maybe_run_field_map_and_coverage(
     scan_path: Path,
     json_stream: bool,
     runtime: ResearchOrchestratorRuntime,
-) -> tuple[list[dict[str, Any]], list[Path], Path | None, int, dict[str, str]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[Path],
+    Path | None,
+    int,
+    dict[str, str],
+    list[dict[str, Any]],
+]:
     landscapes = [scan_landscape]
     landscape_paths = [scan_path]
     if focus_analysis_json is not None or analysis_provider != "litellm":
-        return landscapes, landscape_paths, None, 0, {}
+        return landscapes, landscape_paths, None, 0, {}, []
 
     field_map_path, field_map_artifact = _run_field_map_phase(
         research_pkg,
@@ -641,7 +678,7 @@ def _maybe_run_field_map_and_coverage(
     state_artifacts = {"field_map": str(field_map_path)}
     coverage_queries = _coverage_queries_from_field_map(field_map_artifact)
     if not coverage_queries:
-        return landscapes, landscape_paths, field_map_path, 0, state_artifacts
+        return landscapes, landscape_paths, field_map_path, 0, state_artifacts, []
 
     coverage_search_json = execute_live_searches(
         research_pkg,
@@ -654,7 +691,7 @@ def _maybe_run_field_map_and_coverage(
         json_stream=json_stream,
         runtime=runtime,
     )
-    coverage_path, coverage_landscape = _run_coverage_landscape_phase(
+    coverage_path, coverage_landscape, coverage_sync_payload = _run_coverage_landscape_phase(
         research_pkg,
         run,
         coverage_search_json=coverage_search_json,
@@ -667,7 +704,14 @@ def _maybe_run_field_map_and_coverage(
     landscapes.append(coverage_landscape)
     landscape_paths.append(coverage_path)
     state_artifacts["coverage_landscape"] = str(coverage_path)
-    return landscapes, landscape_paths, field_map_path, len(coverage_search_json), state_artifacts
+    return (
+        landscapes,
+        landscape_paths,
+        field_map_path,
+        len(coverage_search_json),
+        state_artifacts,
+        [coverage_sync_payload],
+    )
 
 
 def _run_field_map_phase(
@@ -774,7 +818,7 @@ def _run_coverage_landscape_phase(
     research_mode: str,
     json_stream: bool,
     runtime: ResearchOrchestratorRuntime,
-) -> tuple[Path, dict[str, Any]]:
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     runtime.update_run_state(run, {"phase": "explore_coverage"})
     runtime.emit_run_event(
         run,
@@ -849,7 +893,7 @@ def _run_coverage_landscape_phase(
         json_stream=json_stream,
         payload={"artifact": str(coverage_path), "stats": coverage_landscape["stats"]},
     )
-    return coverage_path, coverage_landscape
+    return coverage_path, coverage_landscape, coverage_sync_payload
 
 
 def _focus_payload_for_selection(
@@ -934,6 +978,8 @@ def _run_evidence_select_and_deep_expand(
     )
     plan = cast(dict[str, list[str]], selected_evidence["materialization_plan"])
     selection = cast(dict[str, Any], selected_evidence["selection"])
+    corpus = selected_evidence.get("corpus")
+    corpus_payload = corpus if isinstance(corpus, dict) else {}
     runtime.append_research_event(
         research_pkg,
         "run.evidence_select.completed",
@@ -941,6 +987,7 @@ def _run_evidence_select_and_deep_expand(
             "focus": selected_focus,
             "artifact": str(selected_evidence_path),
             "selection": selection,
+            "corpus": corpus_payload,
             "coverage_audit": selected_evidence.get("coverage_audit"),
             "materialization_plan": plan,
         },
@@ -956,6 +1003,11 @@ def _run_evidence_select_and_deep_expand(
         metrics={
             **selection,
             "selection_mode": evidence_selection_mode,
+            "corpus_candidate_papers": corpus_payload.get("candidate_papers", 0),
+            "corpus_materialization_candidate_papers": corpus_payload.get(
+                "materialization_candidate_papers",
+                0,
+            ),
             "omitted_relevant_evidence": len(
                 cast(list[Any], selected_evidence.get("omitted_relevant_evidence") or [])
             ),
@@ -971,6 +1023,7 @@ def _run_evidence_select_and_deep_expand(
         payload={
             "artifact": str(selected_evidence_path),
             "selection": selection,
+            "corpus": corpus_payload,
             "coverage_audit": selected_evidence.get("coverage_audit"),
             "materialization_plan": plan,
         },
@@ -993,7 +1046,34 @@ def _run_evidence_select_and_deep_expand(
         lkm_index=lkm_index,
         dry_run=False,
     )
-    selected_evidence["materialization_result"] = materialized
+    materialization_summary = _materialization_summary_payload(materialized)
+    materialization_manifest = {
+        "schema_version": 1,
+        "kind": "evidence_materialization",
+        "focus": selected_focus,
+        "selected_evidence": str(selected_evidence_path),
+        "materialization_plan": plan,
+        "materialization_summary": materialization_summary,
+        "materialization_result": materialized,
+    }
+    materialization_manifest_path = runtime.write_artifact(
+        research_pkg,
+        "materializations",
+        "materialization",
+        materialization_manifest,
+    )
+    selected_evidence["materialization_manifest"] = str(materialization_manifest_path)
+    selected_evidence["materialization_summary"] = materialization_summary
+    materialized_packages_raw = materialized.get("lkm_packages_materialized")
+    materialized_packages = (
+        [package for package in materialized_packages_raw if isinstance(package, dict)]
+        if isinstance(materialized_packages_raw, list)
+        else []
+    )
+    selected_evidence = hydrate_selected_evidence_with_anchor_resolution(
+        selected_evidence,
+        materialized_packages=materialized_packages,
+    )
     runtime.write_json_file(selected_evidence_path, selected_evidence)
     runtime.append_research_event(
         research_pkg,
@@ -1001,7 +1081,8 @@ def _run_evidence_select_and_deep_expand(
         {
             "focus": selected_focus,
             "artifact": str(selected_evidence_path),
-            **materialized,
+            "materialization_manifest": str(materialization_manifest_path),
+            "materialization_summary": materialization_summary,
         },
     )
     runtime.record_cli_trace(
@@ -1011,7 +1092,7 @@ def _run_evidence_select_and_deep_expand(
         name="deep.expand",
         mode=research_mode,
         inputs=[str(selected_evidence_path)],
-        outputs=[str(selected_evidence_path)],
+        outputs=[str(selected_evidence_path), str(materialization_manifest_path)],
         metrics={
             "lkm_materialize_requests": _count_payload_items(
                 materialized,
@@ -1025,6 +1106,15 @@ def _run_evidence_select_and_deep_expand(
                 materialized,
                 "lkm_chains_materialized",
             ),
+            "anchors_resolved": sum(
+                1
+                for anchor in selected_evidence.get("anchors", [])
+                if isinstance(anchor, dict) and anchor.get("status") == "resolved"
+            ),
+            "anchor_obligations_deferred": _count_payload_items(
+                selected_evidence,
+                "deferred_obligations",
+            ),
         },
     )
     runtime.emit_run_event(
@@ -1032,7 +1122,11 @@ def _run_evidence_select_and_deep_expand(
         event_type="phase.completed",
         phase="deep_expand",
         json_stream=json_stream,
-        payload={"artifact": str(selected_evidence_path), **materialized},
+        payload={
+            "artifact": str(selected_evidence_path),
+            "materialization_manifest": str(materialization_manifest_path),
+            "materialization_summary": materialization_summary,
+        },
     )
     return selected_evidence_path, selected_evidence
 
@@ -1167,7 +1261,7 @@ def _run_assessment_for_focus(
 
     selected_evidence_path: Path | None = None
     selected_evidence_artifact: dict[str, Any] | None = None
-    if assess_analysis_json is None and analysis_provider in {"command", "litellm"}:
+    if evidence_selection_mode != "off":
         selected_evidence_path, selected_evidence_artifact = _run_evidence_select_and_deep_expand(
             research_pkg,
             run,
@@ -1360,9 +1454,251 @@ def _run_assessment_for_focus(
         "landscape_paths": landscape_paths,
         "targeted_search_json": targeted_search_json,
         "selected_evidence_path": selected_evidence_path,
+        "selected_evidence": selected_evidence_artifact,
         "assessment": assessment,
         "assessment_path": assessment_path,
+        "assess_sync_payload": assess_sync_payload,
     }
+
+
+def _collect_research_obligations(
+    assessment_results: list[dict[str, Any]],
+    *,
+    extra_sync_payloads: list[dict[str, Any]] | None = None,
+    include_selected_evidence_obligations: bool = True,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    open_obligations: list[dict[str, Any]] = []
+    deferred_obligations: list[dict[str, Any]] = []
+    for result in assessment_results:
+        selected_evidence = result.get("selected_evidence")
+        if include_selected_evidence_obligations and isinstance(selected_evidence, dict):
+            deferred_obligations.extend(
+                item
+                for item in selected_evidence.get("deferred_obligations", [])
+                if isinstance(item, dict)
+            )
+        sync_payload = result.get("assess_sync_payload")
+        if not isinstance(sync_payload, dict):
+            continue
+        open_obligations.extend(
+            item for item in sync_payload.get("open_obligations", []) if isinstance(item, dict)
+        )
+        deferred_obligations.extend(
+            item
+            for item in sync_payload.get("obligations_deferred", [])
+            if isinstance(item, dict)
+        )
+    for sync_payload in extra_sync_payloads or []:
+        open_obligations.extend(
+            item for item in sync_payload.get("open_obligations", []) if isinstance(item, dict)
+        )
+        deferred_obligations.extend(
+            item
+            for item in sync_payload.get("obligations_deferred", [])
+            if isinstance(item, dict)
+        )
+    return open_obligations, deferred_obligations
+
+
+def _collect_selected_evidence_obligations(
+    assessment_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    obligations: list[dict[str, Any]] = []
+    for result in assessment_results:
+        selected_evidence = result.get("selected_evidence")
+        if not isinstance(selected_evidence, dict):
+            continue
+        obligations.extend(
+            item
+            for item in selected_evidence.get("deferred_obligations", [])
+            if isinstance(item, dict)
+        )
+    return obligations
+
+
+def _read_json_artifact(path_value: object) -> dict[str, Any]:
+    if not isinstance(path_value, str) or not path_value:
+        return {}
+    try:
+        payload = json.loads(Path(path_value).read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _append_unique_string(values: list[str], value: object) -> None:
+    if isinstance(value, str) and value and value not in values:
+        values.append(value)
+
+
+def _int_payload_value(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
+def _materialization_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    packages = [
+        item for item in payload.get("lkm_packages_materialized", []) if isinstance(item, dict)
+    ]
+    return {
+        "lkm_materialize_requests": _count_payload_items(payload, "lkm_materialize_requests"),
+        "lkm_packages_materialized": len(packages),
+        "lkm_chains_materialized": _count_payload_items(payload, "lkm_chains_materialized"),
+        "package_refs": [
+            ref
+            for item in packages
+            if isinstance(ref := item.get("source_ref"), str) and ref
+        ],
+    }
+
+
+def _collect_corpus_payload(assessment_results: list[dict[str, Any]]) -> dict[str, Any]:
+    by_focus: list[dict[str, Any]] = []
+    candidate_paper_ids: list[str] = []
+    materialization_paper_ids: list[str] = []
+    package_refs: list[str] = []
+    selected_source_refs: list[str] = []
+    total_candidate_items = 0
+    total_unique_candidate_items = 0
+    total_candidate_paper_leads = 0
+    total_selected_items = 0
+    selected_unique_papers_sum = 0
+    materialization_policy: str | None = None
+
+    for result in assessment_results:
+        selected_evidence = result.get("selected_evidence")
+        if not isinstance(selected_evidence, dict):
+            continue
+        corpus = selected_evidence.get("corpus")
+        corpus_payload = corpus if isinstance(corpus, dict) else {}
+        selection = selected_evidence.get("selection")
+        selection_payload = selection if isinstance(selection, dict) else {}
+        plan = selected_evidence.get("materialization_plan")
+        plan_payload = plan if isinstance(plan, dict) else {}
+        plan_paper_ids = _string_list(plan_payload.get("paper_ids"))
+        plan_package_refs = _string_list(plan_payload.get("package_refs"))
+
+        for paper_id in plan_paper_ids:
+            _append_unique_string(candidate_paper_ids, paper_id)
+            _append_unique_string(materialization_paper_ids, paper_id)
+        for package_ref in plan_package_refs:
+            _append_unique_string(package_refs, package_ref)
+        for anchor in selected_evidence.get("anchors", []):
+            if isinstance(anchor, dict):
+                _append_unique_string(selected_source_refs, anchor.get("source_ref"))
+
+        candidate_items = _int_payload_value(corpus_payload, "candidate_items")
+        unique_candidate_items = _int_payload_value(corpus_payload, "unique_candidate_items")
+        candidate_paper_leads = _int_payload_value(corpus_payload, "candidate_paper_leads")
+        candidate_papers = _int_payload_value(corpus_payload, "candidate_papers") or len(
+            plan_paper_ids
+        )
+        materialization_candidate_papers = _int_payload_value(
+            corpus_payload,
+            "materialization_candidate_papers",
+        ) or len(plan_paper_ids)
+        selected_items = _int_payload_value(selection_payload, "items_selected")
+        selected_unique_papers = _int_payload_value(selection_payload, "selected_unique_papers")
+        policy = corpus_payload.get("materialization_policy")
+        if isinstance(policy, str) and policy:
+            materialization_policy = policy
+
+        total_candidate_items += candidate_items
+        total_unique_candidate_items += unique_candidate_items
+        total_candidate_paper_leads += candidate_paper_leads
+        total_selected_items += selected_items
+        selected_unique_papers_sum += selected_unique_papers
+
+        focus = result.get("focus")
+        by_focus.append(
+            {
+                "focus": focus if isinstance(focus, str) and focus else "unknown",
+                "candidate_items": candidate_items,
+                "unique_candidate_items": unique_candidate_items,
+                "candidate_papers": candidate_papers,
+                "materialization_candidate_papers": materialization_candidate_papers,
+                "selected_items": selected_items,
+                "selected_unique_papers": selected_unique_papers,
+            }
+        )
+
+    return {
+        "focuses": len(by_focus),
+        "candidate_items": total_candidate_items,
+        "unique_candidate_items": total_unique_candidate_items,
+        "candidate_paper_leads": total_candidate_paper_leads,
+        "candidate_papers": len(candidate_paper_ids),
+        "materialization_policy": materialization_policy,
+        "materialization_candidate_papers": len(materialization_paper_ids),
+        "selected_items": total_selected_items,
+        "selected_unique_papers": len(selected_source_refs) or selected_unique_papers_sum,
+        "package_refs": package_refs,
+        "by_focus": by_focus,
+    }
+
+
+def _collect_graph_asset_payload(
+    *,
+    state_artifacts: dict[str, object],
+    assessment_results: list[dict[str, Any]],
+    obligation_decision: dict[str, Any],
+) -> dict[str, Any]:
+    anchors: list[dict[str, Any]] = []
+    claims: list[dict[str, Any]] = []
+    evidence_matrix: list[dict[str, Any]] = []
+    relation_records: dict[str, dict[str, Any]] = {}
+    for result in assessment_results:
+        selected_evidence = result.get("selected_evidence")
+        if isinstance(selected_evidence, dict):
+            anchors.extend(
+                item for item in selected_evidence.get("anchors", []) if isinstance(item, dict)
+            )
+        sync_payload = result.get("assess_sync_payload")
+        if not isinstance(sync_payload, dict):
+            continue
+        claims.extend(
+            {"id": claim_id, "gaia_object_type": "claim"}
+            for claim_id in sync_payload.get("claims_written", [])
+            if isinstance(claim_id, str) and claim_id
+        )
+        for row in sync_payload.get("evidence_matrix_rows", []):
+            if not isinstance(row, dict):
+                continue
+            evidence_matrix.append(row)
+            relation_id = row.get("relation_id")
+            if not isinstance(relation_id, str) or not relation_id:
+                continue
+            claim_refs = row.get("claim_ids")
+            relation_records[relation_id] = {
+                "id": relation_id,
+                "claim_refs": claim_refs if isinstance(claim_refs, list) else [],
+                "dsl_valid": True,
+            }
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "kind": "gaia_research_graph_assets",
+        "scoped_question": _read_json_artifact(state_artifacts.get("scoped_question")),
+        "corpus": _collect_corpus_payload(assessment_results),
+        "anchors": anchors,
+        "claims": claims,
+        "candidate_relations": list(relation_records.values()),
+        "evidence_matrix": evidence_matrix,
+        "open_obligations": obligation_decision.get("open_obligations", []),
+        "deferred_obligations": obligation_decision.get("deferred_obligations", []),
+        "obligation_decision": obligation_decision.get("decision"),
+        "important_gaps_remain": bool(
+            obligation_decision.get("open_obligations")
+            or obligation_decision.get("deferred_obligations")
+        ),
+    }
+    payload["success_evaluation"] = evaluate_graph_asset_success(payload)
+    return payload
 
 
 def execute_file_provider_run(
@@ -1453,6 +1789,7 @@ def _execute_file_provider_run_impl(
     evidence_max_items: int,
     evidence_max_papers: int,
     evidence_max_chains: int,
+    obligation_iterations: int = 0,
     focus_analysis_command: str | None,
     assess_analysis_command: str | None,
     json_stream: bool,
@@ -1460,8 +1797,9 @@ def _execute_file_provider_run_impl(
 ) -> None:
     """Execute the fixed package-native research workflow for existing search inputs."""
     _ = mode
+    includes_report = _run_includes_report(run)
     research_mode = _research_mode()
-    state_artifacts: dict[str, object] = {}
+    state_artifacts: dict[str, object] = _run_state_artifacts(run)
     state_metrics: dict[str, object] = {"searches": len(search_json) + len(targeted_search_json)}
 
     runtime.update_run_state(run, {"status": "running", "phase": "explore_scan"})
@@ -1526,6 +1864,7 @@ def _execute_file_provider_run_impl(
         field_map_path,
         coverage_searches,
         field_map_artifacts,
+        landscape_obligation_sync_payloads,
     ) = _maybe_run_field_map_and_coverage(
         research_pkg,
         run,
@@ -1549,6 +1888,7 @@ def _execute_file_provider_run_impl(
         runtime=runtime,
     )
     state_artifacts.update(field_map_artifacts)
+    landscape_obligation_sync_payloads.insert(0, sync_payload)
 
     if focus_analysis_json is None:
         if analysis_provider == "command":
@@ -1719,6 +2059,34 @@ def _execute_file_provider_run_impl(
 
     assessment_paths = [cast(Path, result["assessment_path"]) for result in assessment_results]
     assessments = [cast(dict[str, Any], result["assessment"]) for result in assessment_results]
+    assessed_focus_ids = {
+        focus_id
+        for assessment in assessments
+        if isinstance((focus_payload := assessment.get("focus")), dict)
+        and isinstance((focus_id := focus_payload.get("id")), str)
+        and focus_id
+    }
+    workflow_obligations = derive_workflow_obligations(
+        focus_artifact=focus_artifact,
+        assessed_focus_ids=assessed_focus_ids,
+    )
+    selected_evidence_obligations = _collect_selected_evidence_obligations(assessment_results)
+    selected_evidence_sync_payload: dict[str, Any] = {}
+    if selected_evidence_obligations:
+        selected_evidence_sync = sync_research_obligations(
+            research_pkg,
+            selected_evidence_obligations,
+            dry_run=False,
+        )
+        selected_evidence_sync_payload = selected_evidence_sync.to_payload()
+    workflow_sync_payload: dict[str, Any] = {}
+    if workflow_obligations:
+        workflow_sync = sync_research_obligations(
+            research_pkg,
+            workflow_obligations,
+            dry_run=False,
+        )
+        workflow_sync_payload = workflow_sync.to_payload()
     all_landscape_paths = [
         Path(path)
         for path in dict.fromkeys(
@@ -1744,6 +2112,92 @@ def _execute_file_provider_run_impl(
         state_artifacts["selected_evidence_by_focus"] = [
             str(path) for path in selected_evidence_paths
         ]
+
+    open_obligations, deferred_obligations = _collect_research_obligations(
+        assessment_results,
+        extra_sync_payloads=[
+            *landscape_obligation_sync_payloads,
+            *([selected_evidence_sync_payload] if selected_evidence_sync_payload else []),
+            *([workflow_sync_payload] if workflow_sync_payload else []),
+        ],
+        include_selected_evidence_obligations=False,
+    )
+    obligation_budget = ResearchRunBudget(
+        focus_count=focus_count,
+        evidence_items_per_focus=evidence_max_items,
+        evidence_papers_per_focus=evidence_max_papers,
+        evidence_chains_per_focus=evidence_max_chains,
+        obligation_iterations=obligation_iterations,
+    )
+    obligation_schedule = plan_obligation_schedule(
+        open_obligations=open_obligations,
+        deferred_obligations=deferred_obligations,
+        budget=obligation_budget,
+    )
+    obligation_decision = plan_obligation_decision(
+        open_obligations=open_obligations,
+        deferred_obligations=deferred_obligations,
+        budget=obligation_budget,
+    )
+    runtime.update_run_state(run, {"phase": "obligations_plan"})
+    start = perf_counter()
+    obligations_payload: dict[str, Any] = {
+        "schema_version": 1,
+        "kind": "research_obligation_plan",
+        "budget": {
+            "focus_count": obligation_budget.focus_count,
+            "evidence_items_per_focus": obligation_budget.evidence_items_per_focus,
+            "evidence_papers_per_focus": obligation_budget.evidence_papers_per_focus,
+            "evidence_chains_per_focus": obligation_budget.evidence_chains_per_focus,
+            "obligation_iterations": obligation_budget.obligation_iterations,
+        },
+        "open_obligations": open_obligations,
+        "schedule": obligation_schedule,
+        **obligation_decision,
+    }
+    obligations_path = run.run_dir / "trace" / "obligations.json"
+    runtime.write_json_file(obligations_path, obligations_payload)
+    runtime.record_cli_trace(
+        research_pkg,
+        run,
+        start=start,
+        name="obligations.plan",
+        mode="evaluation",
+        inputs=[str(path) for path in assessment_paths],
+        outputs=[str(obligations_path)],
+        metrics={
+            "decision": obligation_decision.get("decision"),
+            "open_obligations": len(open_obligations),
+            "deferred_obligations": len(obligation_decision.get("deferred_obligations", [])),
+            "obligation_iterations": obligation_budget.obligation_iterations,
+        },
+    )
+    state_artifacts["obligations"] = str(obligations_path)
+    graph_assets_payload = _collect_graph_asset_payload(
+        state_artifacts=state_artifacts,
+        assessment_results=assessment_results,
+        obligation_decision=obligations_payload,
+    )
+    graph_assets_path = runtime.write_artifact(
+        research_pkg,
+        "graph-assets",
+        "graph-assets",
+        graph_assets_payload,
+    )
+    runtime.record_cli_trace(
+        research_pkg,
+        run,
+        start=perf_counter(),
+        name="graph_assets.evaluate",
+        mode="evaluation",
+        inputs=[str(obligations_path), *[str(path) for path in assessment_paths]],
+        outputs=[str(graph_assets_path)],
+        metrics={
+            "success": graph_assets_payload["success_evaluation"].get("success"),
+            "missing": graph_assets_payload["success_evaluation"].get("missing"),
+        },
+    )
+    state_artifacts["graph_assets"] = str(graph_assets_path)
 
     selected_focus = selected_focus_ids[0]
     assessment = assessments[0]
@@ -1776,82 +2230,86 @@ def _execute_file_provider_run_impl(
         },
     )
 
-    sectioned_markdown, sectioned_report_inputs = runtime.maybe_run_sectioned_report_writing(
-        research_pkg,
-        run,
-        topic=topic,
-        language=language,
-        analysis_provider=analysis_provider,
-        research_mode=research_mode,
-        model=model,
-        assess_model=assess_model,
-        focus=", ".join(selected_focus_ids),
-        field_map_path=field_map_path,
-        focus_path=focus_path,
-        landscape_paths=landscape_paths,
-        selected_evidence_paths=selected_evidence_paths,
-        assessment_paths=assessment_paths,
-        llm_temperature=llm_temperature,
-        llm_timeout=llm_timeout,
-        llm_max_retries=llm_max_retries,
-        llm_max_tokens=llm_max_tokens,
-        report_section_concurrency=report_section_concurrency,
-        json_stream=json_stream,
-    )
+    if includes_report:
+        sectioned_markdown, sectioned_report_inputs = runtime.maybe_run_sectioned_report_writing(
+            research_pkg,
+            run,
+            topic=topic,
+            language=language,
+            analysis_provider=analysis_provider,
+            research_mode=research_mode,
+            model=model,
+            assess_model=assess_model,
+            focus=", ".join(selected_focus_ids),
+            field_map_path=field_map_path,
+            focus_path=focus_path,
+            landscape_paths=landscape_paths,
+            selected_evidence_paths=selected_evidence_paths,
+            assessment_paths=assessment_paths,
+            llm_temperature=llm_temperature,
+            llm_timeout=llm_timeout,
+            llm_max_retries=llm_max_retries,
+            llm_max_tokens=llm_max_tokens,
+            report_section_concurrency=report_section_concurrency,
+            json_stream=json_stream,
+        )
 
-    runtime.update_run_state(run, {"phase": "reports_stop"})
-    start = perf_counter()
-    trace_dir = run.run_dir / "trace"
-    focus_trace_artifacts = _collect_trace_json_artifacts(trace_dir, kind="focus_synthesis")
-    assessment_trace_artifacts = _collect_trace_json_artifacts(trace_dir, kind="assessment")
-    final_focus_inputs = [path for path, _payload in focus_trace_artifacts] or [focus_path]
-    final_assessment_inputs = [path for path, _payload in assessment_trace_artifacts] or [
-        assessment_path
-    ]
-    final_focus_payloads = [
-        cast(dict[str, Any], payload) for _path, payload in focus_trace_artifacts
-    ] or [focus_artifact]
-    final_assessment_payloads = [
-        cast(dict[str, Any], payload) for _path, payload in assessment_trace_artifacts
-    ] or [assessment]
-    final_report_path = trace_dir / "final_report.md"
-    final_markdown = sectioned_markdown or render_final_research_report_markdown(
-        focus_artifacts=final_focus_payloads,
-        assessments=final_assessment_payloads,
-    )
-    runtime.write_text_file(final_report_path, final_markdown)
-    runtime.record_cli_trace(
-        research_pkg,
-        run,
-        start=start,
-        name="report.final",
-        mode=research_mode,
-        inputs=[
-            *[str(path) for path in final_focus_inputs],
-            *[str(path) for path in final_assessment_inputs],
-            *sectioned_report_inputs,
-        ],
-        outputs=[str(final_report_path)],
-        metrics={
-            "assessments": len(final_assessment_payloads),
-            "focus_artifacts": len(final_focus_payloads),
-            "markdown_chars": len(final_markdown),
-            "writes_file": True,
-        },
-    )
+        runtime.update_run_state(run, {"phase": "reports_stop"})
+        start = perf_counter()
+        trace_dir = run.run_dir / "trace"
+        focus_trace_artifacts = _collect_trace_json_artifacts(trace_dir, kind="focus_synthesis")
+        assessment_trace_artifacts = _collect_trace_json_artifacts(trace_dir, kind="assessment")
+        final_focus_inputs = [path for path, _payload in focus_trace_artifacts] or [focus_path]
+        final_assessment_inputs = [path for path, _payload in assessment_trace_artifacts] or [
+            assessment_path
+        ]
+        final_focus_payloads = [
+            cast(dict[str, Any], payload) for _path, payload in focus_trace_artifacts
+        ] or [focus_artifact]
+        final_assessment_payloads = [
+            cast(dict[str, Any], payload) for _path, payload in assessment_trace_artifacts
+        ] or [assessment]
+        final_report_path = trace_dir / "final_report.md"
+        final_markdown = sectioned_markdown or render_final_research_report_markdown(
+            focus_artifacts=final_focus_payloads,
+            assessments=final_assessment_payloads,
+        )
+        runtime.write_text_file(final_report_path, final_markdown)
+        runtime.record_cli_trace(
+            research_pkg,
+            run,
+            start=start,
+            name="report.final",
+            mode=research_mode,
+            inputs=[
+                *[str(path) for path in final_focus_inputs],
+                *[str(path) for path in final_assessment_inputs],
+                *sectioned_report_inputs,
+            ],
+            outputs=[str(final_report_path)],
+            metrics={
+                "assessments": len(final_assessment_payloads),
+                "focus_artifacts": len(final_focus_payloads),
+                "markdown_chars": len(final_markdown),
+                "writes_file": True,
+            },
+        )
+        state_artifacts["final_report"] = str(final_report_path)
+
     state_artifacts["stop"] = str(stop_path)
-    state_artifacts["final_report"] = str(final_report_path)
+    completed_payload: dict[str, Any] = {
+        "stop": str(stop_path),
+        "recommendation": stop_payload.get("recommendation"),
+        "should_stop": stop_payload.get("should_stop"),
+    }
+    if includes_report:
+        completed_payload["final_report"] = str(final_report_path)
     runtime.emit_run_event(
         run,
         event_type="phase.completed",
         phase="reports_stop",
         json_stream=json_stream,
-        payload={
-            "final_report": str(final_report_path),
-            "stop": str(stop_path),
-            "recommendation": stop_payload.get("recommendation"),
-            "should_stop": stop_payload.get("should_stop"),
-        },
+        payload=completed_payload,
     )
 
     benchmark_path = runtime.write_benchmark_summary(research_pkg, run.run_dir / "trace")
@@ -1869,6 +2327,10 @@ def _execute_file_provider_run_impl(
             "candidate_obligations": sum(
                 len(item["candidate_obligations"]) for item in assessments
             ),
+            "open_obligations": len(open_obligations),
+            "deferred_obligations": len(obligation_decision.get("deferred_obligations", [])),
+            "obligation_decision": obligation_decision.get("decision"),
+            "graph_asset_success": graph_assets_payload["success_evaluation"].get("success"),
         }
     )
     runtime.update_run_state(

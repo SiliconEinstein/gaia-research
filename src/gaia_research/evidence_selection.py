@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from gaia_research.obligations import make_research_obligation
+
 SELECTED_EVIDENCE_SCHEMA_VERSION = 1
 
 
@@ -17,6 +19,7 @@ def build_selected_evidence_artifact(
     focus: dict[str, Any],
     landscapes: list[dict[str, Any]],
     selection_mode: str = "fast",
+    lkm_index: str = "bohrium",
     max_items: int = 12,
     max_papers: int = 6,
     max_chains: int = 6,
@@ -25,6 +28,10 @@ def build_selected_evidence_artifact(
     """Build a compact evidence packet and deep-materialization plan for assessment."""
     packet = _evidence_packet_from_landscapes(landscapes)
     candidate_items = _dedupe_items(packet["items"])
+    candidate_paper_ids = _candidate_paper_ids(
+        paper_leads=packet["paper_leads"],
+        candidate_items=candidate_items,
+    )
     ranked_items = sorted(
         candidate_items,
         key=lambda item: _item_rank(item, focus=focus),
@@ -49,6 +56,11 @@ def build_selected_evidence_artifact(
         "items": selected_items,
         "paper_leads": selected_paper_leads,
     }
+    materialization_plan = _materialization_plan(
+        candidate_paper_ids=candidate_paper_ids,
+        lkm_index=lkm_index,
+    )
+    anchors = _anchors_for_items(selected_items, lkm_index=lkm_index)
     return {
         "schema_version": SELECTED_EVIDENCE_SCHEMA_VERSION,
         "kind": "selected_evidence",
@@ -60,13 +72,19 @@ def build_selected_evidence_artifact(
             "max_papers": max_papers,
             "max_chains": max_chains,
             "max_omitted": max_omitted,
+            "materialization_policy": "all_candidate_papers",
+        },
+        "corpus": {
+            "candidate_items": len(packet["items"]),
+            "unique_candidate_items": len(candidate_items),
+            "candidate_paper_leads": len(packet["paper_leads"]),
+            "candidate_papers": len(candidate_paper_ids),
+            "materialization_policy": "all_candidate_papers",
+            "materialization_candidate_papers": len(candidate_paper_ids),
         },
         "evidence_packet": evidence_packet,
-        "materialization_plan": {
-            "paper_ids": _paper_ids(selected_paper_leads, limit=max_papers),
-            "claim_ids": [],
-            "chain_claim_ids": _claim_ids(selected_items, limit=max_chains),
-        },
+        "materialization_plan": materialization_plan,
+        "anchors": anchors,
         "selection": {
             "items_considered": len(packet["items"]),
             "unique_items_considered": len(candidate_items),
@@ -88,6 +106,78 @@ def build_selected_evidence_artifact(
             candidate_items=candidate_items,
         ),
         "omitted_relevant_evidence": [_item_summary(item) for item in omitted_items],
+    }
+
+
+def resolve_materialized_anchors(
+    *,
+    anchors: list[dict[str, Any]],
+    materialized_packages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve selected LKM anchors against materialized paper package symbol refs."""
+    symbol_refs = _symbol_refs_by_anchor(materialized_packages)
+    resolved_anchors: list[dict[str, Any]] = []
+    deferred_obligations: list[dict[str, Any]] = []
+    for anchor in anchors:
+        resolved = dict(anchor)
+        key = _anchor_resolution_key(resolved)
+        symbol_ref = symbol_refs.get(key)
+        if symbol_ref is not None:
+            resolved["import_name"] = symbol_ref["import_name"]
+            resolved["symbol"] = symbol_ref["symbol"]
+            resolved["ref"] = symbol_ref["ref"]
+            resolved["status"] = "resolved"
+        else:
+            resolved["status"] = "unresolved"
+            deferred_obligations.append(_anchor_resolution_obligation(resolved))
+        resolved_anchors.append(resolved)
+    return {"anchors": resolved_anchors, "deferred_obligations": deferred_obligations}
+
+
+def hydrate_selected_evidence_with_anchor_resolution(
+    selected_evidence: dict[str, Any],
+    *,
+    materialized_packages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Attach resolved Gaia refs from materialized package anchors to selected evidence."""
+    hydrated = dict(selected_evidence)
+    anchors = [
+        dict(anchor)
+        for anchor in selected_evidence.get("anchors", [])
+        if isinstance(anchor, dict)
+    ]
+    resolution = resolve_materialized_anchors(
+        anchors=anchors,
+        materialized_packages=materialized_packages,
+    )
+    resolved_anchors = [
+        dict(anchor) for anchor in resolution["anchors"] if isinstance(anchor, dict)
+    ]
+    hydrated["anchors"] = resolved_anchors
+    hydrated["deferred_obligations"] = resolution["deferred_obligations"]
+
+    evidence_packet = selected_evidence.get("evidence_packet")
+    if isinstance(evidence_packet, dict):
+        hydrated["evidence_packet"] = _evidence_packet_with_anchor_refs(
+            evidence_packet,
+            anchors=resolved_anchors,
+        )
+    return hydrated
+
+
+def _materialization_plan(
+    *,
+    candidate_paper_ids: list[str],
+    lkm_index: str,
+) -> dict[str, list[str]]:
+    return {
+        "paper_ids": candidate_paper_ids,
+        "claim_ids": [],
+        "chain_claim_ids": [],
+        "package_refs": [
+            _lkm_paper_source_ref(lkm_index, paper_id)
+            for paper_id in candidate_paper_ids
+        ],
     }
 
 
@@ -237,6 +327,175 @@ def _item_paper_id(item: dict[str, Any]) -> str | None:
     return paper_id if isinstance(paper_id, str) and paper_id else None
 
 
+def _lkm_paper_source_ref(lkm_index: str, paper_id: str) -> str:
+    return f"lkm:{lkm_index}:paper:{paper_id}"
+
+
+def _item_anchor_kind(item: dict[str, Any]) -> str | None:
+    kind = item.get("kind")
+    variable_type = item.get("variable_type")
+    if kind == "variable" and variable_type in {"claim", "question"}:
+        return str(variable_type)
+    if kind in {"claim", "question"}:
+        return str(kind)
+    return None
+
+
+def _item_hit_id(item: dict[str, Any], *, fallback: str) -> str:
+    provenance = item.get("provenance")
+    result_id = provenance.get("result_id") if isinstance(provenance, dict) else None
+    if isinstance(result_id, str) and result_id:
+        return result_id
+    item_id = item.get("id")
+    return item_id if isinstance(item_id, str) and item_id else fallback
+
+
+def _anchors_for_items(items: list[dict[str, Any]], *, lkm_index: str) -> list[dict[str, Any]]:
+    anchors: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        paper_id = _item_paper_id(item)
+        anchor_kind = _item_anchor_kind(item)
+        node_id = item.get("id")
+        if (
+            paper_id is None
+            or anchor_kind is None
+            or not isinstance(node_id, str)
+            or not node_id
+        ):
+            continue
+        key = (paper_id, node_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        anchors.append(
+            {
+                "id": node_id,
+                "hit_id": _item_hit_id(item, fallback=node_id),
+                "node_id": node_id,
+                "kind": anchor_kind,
+                "paper_id": paper_id,
+                "source_ref": _lkm_paper_source_ref(lkm_index, paper_id),
+                "import_name": None,
+                "symbol": None,
+                "ref": None,
+                "status": "pending_materialization",
+                "landscape_index": item.get("landscape_index"),
+            }
+        )
+    return anchors
+
+
+def _anchor_resolution_key(anchor: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(anchor.get("source_ref") or ""),
+        str(anchor.get("kind") or ""),
+        str(anchor.get("node_id") or anchor.get("id") or ""),
+    )
+
+
+def _symbol_refs_by_anchor(
+    materialized_packages: list[dict[str, Any]],
+) -> dict[tuple[str, str, str], dict[str, str]]:
+    refs: dict[tuple[str, str, str], dict[str, str]] = {}
+    for package in materialized_packages:
+        source_ref = package.get("source_ref")
+        import_name = package.get("import_name")
+        if not isinstance(source_ref, str) or not isinstance(import_name, str):
+            continue
+        symbol_refs = package.get("symbol_refs")
+        if not isinstance(symbol_refs, list):
+            continue
+        for raw_symbol_ref in symbol_refs:
+            if not isinstance(raw_symbol_ref, dict):
+                continue
+            node_id = raw_symbol_ref.get("node_id") or raw_symbol_ref.get("id")
+            kind = raw_symbol_ref.get("kind")
+            symbol = raw_symbol_ref.get("symbol")
+            ref = raw_symbol_ref.get("ref")
+            if not all(isinstance(value, str) and value for value in (node_id, kind, symbol, ref)):
+                continue
+            symbol_payload = {
+                "import_name": import_name,
+                "symbol": str(symbol),
+                "ref": str(ref),
+            }
+            for raw_id in (node_id, raw_symbol_ref.get("local_id"), raw_symbol_ref.get("id")):
+                if isinstance(raw_id, str) and raw_id:
+                    refs[(source_ref, str(kind), raw_id)] = symbol_payload
+    return refs
+
+
+def _evidence_packet_with_anchor_refs(
+    evidence_packet: dict[str, Any],
+    *,
+    anchors: list[dict[str, Any]],
+) -> dict[str, Any]:
+    packet = dict(evidence_packet)
+    resolved_by_id = _resolved_anchors_by_item_id(anchors)
+    items: list[dict[str, Any]] = []
+    for item in evidence_packet.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        hydrated_item = dict(item)
+        anchor = resolved_by_id.get(_stable_item_id(hydrated_item, fallback=""))
+        if anchor is not None:
+            hydrated_item["package_ref"] = {
+                "ref": anchor["ref"],
+                "value_type": anchor["kind"],
+                "source_ref": anchor["source_ref"],
+                "import_name": anchor["import_name"],
+                "symbol": anchor["symbol"],
+                "anchor_id": anchor["id"],
+            }
+        items.append(hydrated_item)
+    packet["items"] = items
+    return packet
+
+
+def _resolved_anchors_by_item_id(anchors: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    resolved: dict[str, dict[str, Any]] = {}
+    for anchor in anchors:
+        if anchor.get("status") != "resolved":
+            continue
+        if not all(
+            isinstance(anchor.get(key), str) and anchor.get(key)
+            for key in ("id", "kind", "source_ref", "import_name", "symbol", "ref")
+        ):
+            continue
+        for raw_id in (anchor.get("node_id"), anchor.get("id"), anchor.get("hit_id")):
+            if isinstance(raw_id, str) and raw_id:
+                resolved[raw_id] = anchor
+    return resolved
+
+
+def _anchor_resolution_obligation(anchor: dict[str, Any]) -> dict[str, Any]:
+    kind = str(anchor.get("kind") or "claim")
+    anchor_id = str(anchor.get("id") or anchor.get("node_id") or "unknown")
+    source_ref = str(anchor.get("source_ref") or "unknown source")
+    target = {"kind": kind, "id": anchor_id}
+    action = (
+        f"Resolve LKM {kind} anchor {anchor_id} inside {source_ref} before "
+        "authoring candidate relations."
+    )
+    return make_research_obligation(
+        target=target,
+        action_type="resolve_anchor",
+        action=action,
+        content=action,
+        diagnostic_kind="structural_hole",
+        obligation_type="workflow",
+        auto_closeable=True,
+        blocking=True,
+        budget_class="materialization",
+        source="anchor_resolution",
+        source_kind="anchor_resolution",
+        source_refs=[{"kind": "lkm_anchor", "id": anchor_id}],
+        extra_anchor={"anchor_id": anchor_id, "source_ref": source_ref},
+        actionable=True,
+    )
+
+
 def _paper_leads_for_items(
     paper_leads: list[dict[str, Any]],
     *,
@@ -265,6 +524,22 @@ def _paper_ids_from_items(items: list[dict[str, Any]]) -> list[str]:
         source = item.get("source")
         paper_id = source.get("paper_id") if isinstance(source, dict) else None
         if isinstance(paper_id, str) and paper_id and paper_id not in paper_ids:
+            paper_ids.append(paper_id)
+    return paper_ids
+
+
+def _candidate_paper_ids(
+    *,
+    paper_leads: list[dict[str, Any]],
+    candidate_items: list[dict[str, Any]],
+) -> list[str]:
+    paper_ids: list[str] = []
+    for lead in paper_leads:
+        paper_id = lead.get("paper_id")
+        if isinstance(paper_id, str) and paper_id and paper_id not in paper_ids:
+            paper_ids.append(paper_id)
+    for paper_id in _paper_ids_from_items(candidate_items):
+        if paper_id not in paper_ids:
             paper_ids.append(paper_id)
     return paper_ids
 

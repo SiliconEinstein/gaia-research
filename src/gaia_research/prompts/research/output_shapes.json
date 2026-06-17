@@ -43,7 +43,15 @@
     ]
   },
   "assess_analysis": {
-    "required_top_level_keys": ["relations", "candidate_obligations"],
+    "required_top_level_keys": ["new_claims", "relations", "candidate_obligations"],
+    "new_claims_item_keys": [
+      "id",
+      "claim",
+      "category",
+      "rationale",
+      "answers_question",
+      "source_refs"
+    ],
     "relations_item_keys": [
       "type",
       "claim",
@@ -56,11 +64,26 @@
       "certainty",
       "scope_note",
       "promotion_hint",
-      "source_refs"
+      "source_refs",
+      "claim_refs"
     ],
+    "relations_promotion_hint_values": [
+      "derive",
+      "infer",
+      "depends_on",
+      "contradict",
+      "question",
+      "obligation",
+      "none"
+    ],
+    "relations_promotion_hint_note": "promotion_hint is not the stance/relation type; do not set it to supports/opposes/qualifies/undercuts/background_for/needs_more_evidence.",
+    "relations_claim_refs_note": "claim_refs are relation endpoints; source_refs do not replace claim_refs and should remain provenance/citations unless a package_ref is itself an endpoint.",
     "optional_judgment_keys": ["limitations", "next_queries"],
     "candidate_obligations_item_keys": [
       "kind",
+      "target",
+      "action_type",
+      "action",
       "content",
       "source_refs",
       "actionable"

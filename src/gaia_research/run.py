@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,8 @@ from gaia_research.artifacts import ResearchPackage, ensure_research_manifest
 
 RUN_SCHEMA_VERSION = 1
 RUN_MODES = {"fast-package-native"}
+GRAPH_ASSET_OUTPUT_CONTRACT = "gaia_graph_assets"
+REPORT_OUTPUT_CONTRACT = "research_report"
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,37 @@ def _package_payload(pkg: ResearchPackage) -> dict[str, str]:
     }
 
 
+def _scoped_question_payload(*, run_id: str, question: str) -> dict[str, Any]:
+    return {
+        "kind": "scoped_question",
+        "id": f"{run_id}_question",
+        "question": question,
+        "metadata": {"gaia_research": {"kind": "research_question"}},
+    }
+
+
+def _initial_phase(*, wait_for_query_plan: bool) -> str:
+    if wait_for_query_plan:
+        return "query_plan"
+    return "graph_scope"
+
+
+def _normalize_output_contracts(output_contracts: Sequence[str] | None) -> list[str]:
+    if output_contracts is None:
+        return [GRAPH_ASSET_OUTPUT_CONTRACT, REPORT_OUTPUT_CONTRACT]
+    allowed = {GRAPH_ASSET_OUTPUT_CONTRACT, REPORT_OUTPUT_CONTRACT}
+    contracts: list[str] = []
+    for contract in output_contracts:
+        if contract not in allowed:
+            msg = f"unsupported output contract: {contract!r}"
+            raise ValueError(msg)
+        if contract not in contracts:
+            contracts.append(contract)
+    if GRAPH_ASSET_OUTPUT_CONTRACT not in contracts:
+        contracts.insert(0, GRAPH_ASSET_OUTPUT_CONTRACT)
+    return contracts
+
+
 def append_run_event(
     events_path: Path,
     *,
@@ -114,11 +148,13 @@ def start_research_run(
     pkg: ResearchPackage,
     *,
     topic: str,
+    focus: str | None = None,
     mode: str,
     language: str,
     profile: str,
     run_id: str | None = None,
     wait_for_query_plan: bool = True,
+    output_contracts: Sequence[str] | None = None,
 ) -> ResearchRunStart:
     """Create the initial run state and query-plan checkpoint."""
     if mode not in RUN_MODES:
@@ -132,8 +168,9 @@ def start_research_run(
     searches_dir = run_dir / "searches"
     analysis_dir = run_dir / "analysis"
     trace_dir = run_dir / "trace"
+    artifacts_dir = run_dir / "artifacts"
     checkpoint_dir = run_dir / "checkpoints"
-    for path in (searches_dir, analysis_dir, trace_dir, checkpoint_dir):
+    for path in (searches_dir, analysis_dir, trace_dir, artifacts_dir, checkpoint_dir):
         path.mkdir(parents=True, exist_ok=True)
 
     events_path = run_dir / "events.ndjson"
@@ -172,20 +209,36 @@ def start_research_run(
             resumed=True,
         )
 
+    artifacts: dict[str, str] = {}
+    scoped_question_text = focus if isinstance(focus, str) and focus.strip() else topic
+    input_kind = "focus" if isinstance(focus, str) and focus.strip() else "topic"
+    scoped_question_path = artifacts_dir / "scoped_question.json"
+    _write_json_atomic(
+        scoped_question_path,
+        _scoped_question_payload(run_id=resolved_run_id, question=scoped_question_text),
+    )
+    artifacts["scoped_question"] = str(scoped_question_path)
+
+    resolved_output_contracts = _normalize_output_contracts(output_contracts)
+
     state = {
         "schema_version": RUN_SCHEMA_VERSION,
         "run_id": resolved_run_id,
         "status": "waiting_for_input" if wait_for_query_plan else "running",
-        "phase": "query_plan" if wait_for_query_plan else "setup",
+        "phase": _initial_phase(wait_for_query_plan=wait_for_query_plan),
         "mode": mode,
         "profile": profile,
         "language": language,
         "topic": topic,
+        "focus": scoped_question_text if input_kind == "focus" else None,
+        "input_kind": input_kind,
+        "output_contract": GRAPH_ASSET_OUTPUT_CONTRACT,
+        "output_contracts": resolved_output_contracts,
         "package": _package_payload(pkg),
         "run_dir": str(run_dir),
         "trace_dir": str(trace_dir),
         "pending_checkpoint": str(checkpoint_path) if wait_for_query_plan else None,
-        "artifacts": {},
+        "artifacts": artifacts,
         "metrics": {},
     }
     _write_json_atomic(state_path, state)
@@ -203,6 +256,9 @@ def start_research_run(
                 "profile": profile,
                 "language": language,
                 "topic": topic,
+                "input_kind": input_kind,
+                "output_contract": state["output_contract"],
+                "output_contracts": resolved_output_contracts,
             },
         )
     )

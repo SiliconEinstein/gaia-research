@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from gaia.engine.inquiry.state import load_state
 
 from gaia_research import (
     ResearchOrchestratorPaused,
     ResearchPackage,
     ResearchSyncResult,
     append_research_event,
+    sync_assessment_artifact,
     write_research_artifact,
 )
 from gaia_research.orchestrator import execute_file_provider_run
@@ -87,6 +89,119 @@ def _focus_analysis_json(path: Path) -> Path:
         ],
         "coverage_gaps": [],
         "notes": [],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _focus_analysis_with_workflow_gaps_json(path: Path) -> Path:
+    payload = {
+        "focuses": [
+            {
+                "id": "aspree_net_benefit",
+                "kind": "research_focus",
+                "status": "candidate",
+                "question": "Does aspirin primary prevention show net benefit in older adults?",
+                "rationale": "ASPREE evidence raises a net-benefit uncertainty.",
+                "priority": "high",
+                "readiness": "ready_for_assess",
+                "scope": {"population": "older adults"},
+                "coverage": {"items": 1, "missing": []},
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+                "suggested_queries": [],
+            },
+            {
+                "id": "bleeding_tradeoff",
+                "kind": "research_focus",
+                "status": "candidate",
+                "question": "How do bleeding harms change the net-benefit judgment?",
+                "rationale": "The benefit-harm tradeoff remains unresolved.",
+                "priority": "medium",
+                "readiness": "ready_for_assess",
+                "scope": {"population": "older adults"},
+                "coverage": {"items": 1, "missing": []},
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+                "suggested_queries": [],
+            },
+            {
+                "id": "subgroup_evidence",
+                "kind": "research_focus",
+                "status": "candidate",
+                "question": "Which subgroups, if any, have different evidence?",
+                "rationale": "Subgroup evidence is thin.",
+                "priority": "low",
+                "readiness": "needs_expand",
+                "scope": {"population": "older adults"},
+                "coverage": {"items": 0, "missing": ["subgroups"]},
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+                "suggested_queries": ["aspirin primary prevention subgroup evidence"],
+            },
+        ],
+        "coverage_gaps": [
+            {
+                "id": "missing_harms",
+                "kind": "coverage_gap",
+                "description": "Bleeding-harm evidence is not yet covered.",
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+            }
+        ],
+        "notes": [],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _assess_analysis_with_hydrated_ref_json(path: Path) -> Path:
+    payload = {
+        "new_claims": [
+            {
+                "id": "aspree_no_net_benefit",
+                "claim": "ASPREE does not show net benefit for routine aspirin use.",
+                "category": "answer_candidate",
+                "rationale": "The materialized ASPREE claim reports no cardiovascular benefit.",
+                "answers_question": "aspree_net_benefit",
+                "source_refs": [{"kind": "package_ref", "id": "lkm:aspree_pkg::net_benefit"}],
+            },
+            {
+                "id": "aspree_bleeding_tradeoff_matters",
+                "claim": "Bleeding harms are material to the ASPREE net-benefit judgment.",
+                "category": "synthesis",
+                "rationale": "The ASPREE result requires benefit and harm to be compared.",
+                "answers_question": "aspree_net_benefit",
+                "source_refs": [{"kind": "package_ref", "id": "lkm:aspree_pkg::net_benefit"}],
+            }
+        ],
+        "relations": [
+            {
+                "type": "supports",
+                "claim": "The ASPREE claim supports the no-net-benefit candidate.",
+                "rationale": "The materialized paper claim reports no cardiovascular benefit.",
+                "epistemic_status": "candidate",
+                "source_refs": [{"kind": "package_ref", "id": "lkm:aspree_pkg::net_benefit"}],
+                "claim_refs": ["lkm:aspree_pkg::net_benefit", "aspree_no_net_benefit"],
+            }
+        ],
+        "candidate_obligations": [],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _assess_analysis_with_obligation_json(path: Path) -> Path:
+    payload = {
+        "new_claims": [],
+        "relations": [],
+        "candidate_obligations": [
+            {
+                "kind": "needs_more_evidence",
+                "target": {"kind": "claim", "ref": "aspree_no_net_benefit"},
+                "action_type": "search_more_evidence",
+                "action": "Find direct counter-evidence for the aspirin net-benefit claim.",
+                "content": "The current evidence leaves the adverse-event tradeoff unresolved.",
+                "source_refs": [{"kind": "variable", "id": "var_aspree"}],
+                "actionable": True,
+            }
+        ],
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
@@ -324,6 +439,85 @@ class _Runtime:
         }
 
 
+class _HydratingRuntime(_Runtime):
+    def materialize_lkm_deep_evidence(
+        self,
+        research_pkg: ResearchPackage,
+        *,
+        paper_ids: list[str],
+        claim_ids: list[str],
+        chain_claim_ids: list[str],
+        lkm_index: str,
+        dry_run: bool,
+    ) -> dict[str, object]:
+        _ = research_pkg, claim_ids, chain_claim_ids, lkm_index, dry_run
+        assert paper_ids == ["P_ASPREE"]
+        return {
+            "lkm_materialize_requests": ["P_ASPREE"],
+            "lkm_packages_materialized": [
+                {
+                    "source_ref": "lkm:bohrium:paper:P_ASPREE",
+                    "import_name": "aspree_pkg",
+                    "symbol_refs": [
+                        {
+                            "node_id": "var_aspree",
+                            "kind": "claim",
+                            "symbol": "net_benefit",
+                            "ref": "lkm:aspree_pkg::net_benefit",
+                        }
+                    ],
+                }
+            ],
+            "lkm_chains_materialized": [],
+        }
+
+
+class _UnresolvedAnchorRuntime(_Runtime):
+    def materialize_lkm_deep_evidence(
+        self,
+        research_pkg: ResearchPackage,
+        *,
+        paper_ids: list[str],
+        claim_ids: list[str],
+        chain_claim_ids: list[str],
+        lkm_index: str,
+        dry_run: bool,
+    ) -> dict[str, object]:
+        _ = research_pkg, paper_ids, claim_ids, chain_claim_ids, lkm_index, dry_run
+        return {
+            "lkm_materialize_requests": ["P_ASPREE"],
+            "lkm_packages_materialized": [],
+            "lkm_chains_materialized": [],
+        }
+
+
+class _ObligationRuntime(_Runtime):
+    def sync_assessment_artifact(
+        self,
+        research_pkg: ResearchPackage,
+        assessment: dict[str, Any],
+        *,
+        dry_run: bool,
+    ) -> ResearchSyncResult:
+        return sync_assessment_artifact(
+            research_pkg,
+            assessment,
+            source_writes=False,
+            dry_run=dry_run,
+        )
+
+
+class _GraphAssetRuntime(_HydratingRuntime):
+    def sync_assessment_artifact(
+        self,
+        research_pkg: ResearchPackage,
+        assessment: dict[str, Any],
+        *,
+        dry_run: bool,
+    ) -> ResearchSyncResult:
+        return sync_assessment_artifact(research_pkg, assessment, dry_run=dry_run)
+
+
 def test_checkpoint_assess_pause_uses_typed_engine_signal(tmp_path: Path) -> None:
     research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
     run = start_research_run(
@@ -377,3 +571,398 @@ def test_checkpoint_assess_pause_uses_typed_engine_signal(tmp_path: Path) -> Non
     assert state["status"] == "waiting_for_input"
     assert state["phase"] == "assess_analysis"
     assert "error" not in state
+
+
+def test_deep_expand_hydrates_selected_evidence_refs_before_assessment(
+    tmp_path: Path,
+) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="hydrate-anchors",
+        wait_for_query_plan=False,
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_with_hydrated_ref_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="fast",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=_HydratingRuntime(),
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    selected_evidence_path = Path(state["artifacts"]["selected_evidence"])
+    selected_evidence = json.loads(selected_evidence_path.read_text(encoding="utf-8"))
+    assert "materialization_result" not in selected_evidence
+    materialization_manifest_path = Path(selected_evidence["materialization_manifest"])
+    materialization_manifest = json.loads(
+        materialization_manifest_path.read_text(encoding="utf-8")
+    )
+    assert materialization_manifest["kind"] == "evidence_materialization"
+    assert materialization_manifest["materialization_result"]["lkm_packages_materialized"][0][
+        "import_name"
+    ] == "aspree_pkg"
+    assert selected_evidence["anchors"][0]["ref"] == "lkm:aspree_pkg::net_benefit"
+    assert selected_evidence["evidence_packet"]["items"][0]["package_ref"]["ref"] == (
+        "lkm:aspree_pkg::net_benefit"
+    )
+
+
+def test_graph_assets_summary_records_package_anchors_claims_relations_and_matrix(
+    tmp_path: Path,
+) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="graph-assets",
+        wait_for_query_plan=False,
+        output_contracts=["gaia_graph_assets"],
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_with_hydrated_ref_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="fast",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=_GraphAssetRuntime(),
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    assert "final_report" not in state["artifacts"]
+    assert not (run.run_dir / "trace" / "final_report.md").exists()
+    assert "scoped_question" in state["artifacts"]
+    graph_assets_path = Path(state["artifacts"]["graph_assets"])
+    graph_assets = json.loads(graph_assets_path.read_text(encoding="utf-8"))
+    assert graph_assets["success_evaluation"]["success"] is True
+    assert graph_assets["corpus"] == {
+        "focuses": 1,
+        "candidate_items": 1,
+        "unique_candidate_items": 1,
+        "candidate_paper_leads": 1,
+        "candidate_papers": 1,
+        "materialization_policy": "all_candidate_papers",
+        "materialization_candidate_papers": 1,
+        "selected_items": 1,
+        "selected_unique_papers": 1,
+        "package_refs": ["lkm:bohrium:paper:P_ASPREE"],
+        "by_focus": [
+            {
+                "focus": "aspree_net_benefit",
+                "candidate_items": 1,
+                "unique_candidate_items": 1,
+                "candidate_papers": 1,
+                "materialization_candidate_papers": 1,
+                "selected_items": 1,
+                "selected_unique_papers": 1,
+            }
+        ],
+    }
+    assert graph_assets["anchors"][0]["ref"] == "lkm:aspree_pkg::net_benefit"
+    assert len(graph_assets["claims"]) == 2
+    assert graph_assets["candidate_relations"][0]["dsl_valid"] is True
+    assert graph_assets["evidence_matrix"][0]["relation_id"].startswith("candidate_relation_")
+    authored_source = (
+        research_pkg.path / "src" / "research_demo" / "authored" / "__init__.py"
+    ).read_text(encoding="utf-8")
+    assert "claim(" in authored_source
+    assert "candidate_relation(" in authored_source
+
+
+def test_assessment_obligations_are_planned_before_report(tmp_path: Path) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="obligations-plan",
+        wait_for_query_plan=False,
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_with_obligation_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=_ObligationRuntime(),
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    obligations_path = Path(state["artifacts"]["obligations"])
+    obligations = json.loads(obligations_path.read_text(encoding="utf-8"))
+    assert obligations["decision"] == "defer"
+    assert obligations["open_obligations"][0]["target"] == {
+        "kind": "claim",
+        "ref": "aspree_no_net_benefit",
+    }
+    assert obligations["open_obligations"][0]["action_type"] == "search_more_evidence"
+    assert obligations["deferred_obligations"][0]["action"] == (
+        "Find direct counter-evidence for the aspirin net-benefit claim."
+    )
+
+
+def test_obligation_loop_budget_selects_next_scheduler_action(tmp_path: Path) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="obligations-schedule",
+        wait_for_query_plan=False,
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_with_obligation_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        obligation_iterations=1,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=_ObligationRuntime(),
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    obligations_path = Path(state["artifacts"]["obligations"])
+    obligations = json.loads(obligations_path.read_text(encoding="utf-8"))
+    assert obligations["decision"] == "continue"
+    assert obligations["next_obligation"]["action_type"] == "search_more_evidence"
+    assert obligations["budget"]["obligation_iterations"] == 1
+    assert obligations["schedule"]["decision"] == "execute"
+    assert obligations["schedule"]["selected_action_type"] == "search_more_evidence"
+    assert obligations["schedule"]["remaining_iterations"] == 0
+    assert obligations["schedule"]["guardrails"]["max_assessed_claims_per_focus"] == 20
+
+
+def test_workflow_obligations_are_collected_before_report(tmp_path: Path) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="workflow-obligations",
+        wait_for_query_plan=False,
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_with_workflow_gaps_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_with_obligation_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=_ObligationRuntime(),
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    obligations_path = Path(state["artifacts"]["obligations"])
+    obligations = json.loads(obligations_path.read_text(encoding="utf-8"))
+    action_types = [item["action_type"] for item in obligations["open_obligations"]]
+    assert "assess_focus" in action_types
+    assert "expand_focus" in action_types
+    assert "close_coverage_gap" in action_types
+    for item in obligations["open_obligations"]:
+        if item["action_type"] in {"assess_focus", "expand_focus", "close_coverage_gap"}:
+            assert item["diagnostic_kind"] == "focus_weakness"
+            assert item["anchor"]["gaia_research"]["obligation_type"] == "workflow"
+
+
+def test_unresolved_anchor_obligations_are_synced_to_inquiry_state(tmp_path: Path) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="anchor-obligations",
+        wait_for_query_plan=False,
+        output_contracts=["gaia_graph_assets"],
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_with_obligation_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="fast",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=_UnresolvedAnchorRuntime(),
+    )
+
+    obligations = load_state(research_pkg.path).synthetic_obligations
+    assert any(
+        obligation.diagnostic_kind == "structural_hole"
+        and obligation.anchor["gaia_research"]["action_type"] == "resolve_anchor"
+        for obligation in obligations
+    )

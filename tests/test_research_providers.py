@@ -151,3 +151,87 @@ def test_hydrated_selected_evidence_preserves_new_expansion_metadata(
     assert items[0]["is_new"] is True
     assert paper_leads[0]["source_landscape_action"] == "explore.expand"
     assert paper_leads[0]["is_new"] is True
+
+
+def test_compact_selected_evidence_exposes_anchor_hydration_context() -> None:
+    compact = research_providers._compact_selected_evidence(
+        {
+            "kind": "selected_evidence",
+            "selection": {"items_selected": 2},
+            "materialization_result": {"lkm_packages_materialized": []},
+            "anchors": [
+                {
+                    "id": "claim_a",
+                    "kind": "claim",
+                    "source_ref": "lkm:bohrium:paper:P1",
+                    "import_name": "paper_p1",
+                    "symbol": "claim_a",
+                    "ref": "lkm:paper_p1::claim_a",
+                    "status": "resolved",
+                },
+                {
+                    "id": "claim_missing",
+                    "kind": "claim",
+                    "source_ref": "lkm:bohrium:paper:P1",
+                    "status": "unresolved",
+                },
+            ],
+            "deferred_obligations": [
+                {
+                    "target": {"kind": "claim", "id": "claim_missing"},
+                    "action_type": "resolve_anchor",
+                    "action": "Resolve missing anchor.",
+                }
+            ],
+            "evidence_packet": {
+                "items": [
+                    {
+                        "item_id": "claim_a",
+                        "id": "claim_a",
+                        "kind": "variable",
+                        "variable_type": "claim",
+                        "content": "Claim A.",
+                        "source": {"paper_id": "P1", "paper_title": "Paper"},
+                        "package_ref": {
+                            "ref": "lkm:paper_p1::claim_a",
+                            "value_type": "claim",
+                        },
+                    }
+                ],
+                "paper_leads": [{"paper_id": "P1", "title": "Paper"}],
+            },
+        }
+    )
+
+    assert compact["anchors"] == [
+        {
+            "id": "claim_a",
+            "kind": "claim",
+            "source_ref": "lkm:bohrium:paper:P1",
+            "import_name": "paper_p1",
+            "symbol": "claim_a",
+            "ref": "lkm:paper_p1::claim_a",
+            "status": "resolved",
+        },
+        {
+            "id": "claim_missing",
+            "kind": "claim",
+            "source_ref": "lkm:bohrium:paper:P1",
+            "import_name": None,
+            "symbol": None,
+            "ref": None,
+            "status": "unresolved",
+        },
+    ]
+    assert compact["available_claim_refs"] == [
+        {
+            "id": "claim_a",
+            "ref": "lkm:paper_p1::claim_a",
+            "source_ref": "lkm:bohrium:paper:P1",
+        }
+    ]
+    deferred_obligations = compact["deferred_obligations"]
+    assert isinstance(deferred_obligations, list)
+    first_obligation = deferred_obligations[0]
+    assert isinstance(first_obligation, dict)
+    assert first_obligation["action_type"] == "resolve_anchor"
