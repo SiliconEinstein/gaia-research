@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from gaia.engine.inquiry.state import load_state
@@ -151,6 +151,74 @@ def _focus_analysis_with_workflow_gaps_json(path: Path) -> Path:
     return path
 
 
+def _focus_analysis_with_expand_only_json(path: Path) -> Path:
+    payload = {
+        "focuses": [
+            {
+                "id": "aspree_net_benefit",
+                "kind": "research_focus",
+                "status": "candidate",
+                "question": "Does aspirin primary prevention show net benefit in older adults?",
+                "rationale": "ASPREE evidence raises a net-benefit uncertainty.",
+                "priority": "high",
+                "readiness": "ready_for_assess",
+                "scope": {"population": "older adults"},
+                "coverage": {"items": 1, "missing": []},
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+                "suggested_queries": [],
+            },
+            {
+                "id": "subgroup_evidence",
+                "kind": "research_focus",
+                "status": "candidate",
+                "question": "Which subgroups, if any, have different evidence?",
+                "rationale": "Subgroup evidence is thin.",
+                "priority": "low",
+                "readiness": "needs_expand",
+                "scope": {"population": "older adults"},
+                "coverage": {"items": 0, "missing": ["subgroups"]},
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+                "suggested_queries": ["aspirin primary prevention subgroup evidence"],
+            },
+        ],
+        "coverage_gaps": [],
+        "notes": [],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _focus_analysis_with_coverage_gap_json(path: Path) -> Path:
+    payload = {
+        "focuses": [
+            {
+                "id": "aspree_net_benefit",
+                "kind": "research_focus",
+                "status": "candidate",
+                "question": "Does aspirin primary prevention show net benefit in older adults?",
+                "rationale": "ASPREE evidence raises a net-benefit uncertainty.",
+                "priority": "high",
+                "readiness": "ready_for_assess",
+                "scope": {"population": "older adults"},
+                "coverage": {"items": 1, "missing": []},
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+                "suggested_queries": [],
+            }
+        ],
+        "coverage_gaps": [
+            {
+                "id": "missing_harms",
+                "kind": "coverage_gap",
+                "description": "Bleeding-harm evidence is not yet covered.",
+                "evidence_refs": [{"kind": "variable", "id": "var_aspree"}],
+            }
+        ],
+        "notes": [],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
 def _assess_analysis_with_hydrated_ref_json(path: Path) -> Path:
     payload = {
         "new_claims": [
@@ -181,6 +249,16 @@ def _assess_analysis_with_hydrated_ref_json(path: Path) -> Path:
                 "claim_refs": ["lkm:aspree_pkg::net_benefit", "aspree_no_net_benefit"],
             }
         ],
+        "candidate_obligations": [],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _assess_analysis_empty_json(path: Path) -> Path:
+    payload: dict[str, object] = {
+        "new_claims": [],
+        "relations": [],
         "candidate_obligations": [],
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -507,6 +585,80 @@ class _ObligationRuntime(_Runtime):
         )
 
 
+class _RecordingSearchRuntime(_ObligationRuntime):
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def search_lkm(
+        self,
+        query: str,
+        *,
+        index: str,
+        limit: int,
+        reasoning_only: bool,
+    ) -> dict[str, object]:
+        self.queries.append(query)
+        return super().search_lkm(
+            query,
+            index=index,
+            limit=limit,
+            reasoning_only=reasoning_only,
+        )
+
+
+class _DeferredCoverageRuntime(_RecordingSearchRuntime):
+    def sync_landscape_artifact(
+        self,
+        research_pkg: ResearchPackage,
+        landscape: dict[str, Any],
+        *,
+        dry_run: bool,
+    ) -> ResearchSyncResult:
+        _ = research_pkg, landscape
+        result = ResearchSyncResult(dry_run=dry_run)
+        result.obligations_deferred.append(
+            {
+                "target": {"kind": "question", "id": "research_coverage"},
+                "target_qid": "research_coverage",
+                "action_type": "close_coverage_gap",
+                "action": "Close coverage gap missing_harms: Bleeding-harm evidence is thin.",
+                "content": "Bleeding-harm evidence is thin.",
+                "diagnostic_kind": "focus_weakness",
+                "anchor": {
+                    "kind": "landscape_gap",
+                    "gaia_research": {
+                        "obligation_type": "workflow",
+                        "action_type": "close_coverage_gap",
+                        "target": {"kind": "question", "id": "research_coverage"},
+                        "auto_closeable": True,
+                        "blocking": False,
+                        "budget_class": "coverage",
+                        "source": "landscape",
+                    },
+                },
+            }
+        )
+        return result
+
+
+class _PolicyRuntime(_RecordingSearchRuntime):
+    def __init__(self, policy: dict[str, Any]) -> None:
+        super().__init__()
+        self.policy = policy
+        self.policy_inputs: list[dict[str, object]] = []
+
+    def run_litellm_provider(self, *_args: object, **kwargs: object) -> str:
+        run = cast(ResearchRunStart, _args[1])
+        phase = cast(str, kwargs["phase"])
+        input_payload = cast(dict[str, object], kwargs["input_payload"])
+        output_name = cast(str, kwargs["output_name"])
+        assert phase == "obligation_policy"
+        self.policy_inputs.append(input_payload)
+        output_path = run.run_dir / "analysis" / f"{output_name}.output.json"
+        self.write_json_file(output_path, self.policy)
+        return str(output_path)
+
+
 class _GraphAssetRuntime(_HydratingRuntime):
     def sync_assessment_artifact(
         self,
@@ -792,7 +944,7 @@ def test_assessment_obligations_are_planned_before_report(tmp_path: Path) -> Non
     )
 
 
-def test_obligation_loop_budget_selects_next_scheduler_action(tmp_path: Path) -> None:
+def test_obligation_loop_executes_search_more_evidence_action(tmp_path: Path) -> None:
     research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
     run = start_research_run(
         research_pkg,
@@ -843,13 +995,347 @@ def test_obligation_loop_budget_selects_next_scheduler_action(tmp_path: Path) ->
     state = json.loads(run.state_path.read_text(encoding="utf-8"))
     obligations_path = Path(state["artifacts"]["obligations"])
     obligations = json.loads(obligations_path.read_text(encoding="utf-8"))
-    assert obligations["decision"] == "continue"
-    assert obligations["next_obligation"]["action_type"] == "search_more_evidence"
+    assert obligations["decision"] == "defer"
     assert obligations["budget"]["obligation_iterations"] == 1
-    assert obligations["schedule"]["decision"] == "execute"
-    assert obligations["schedule"]["selected_action_type"] == "search_more_evidence"
-    assert obligations["schedule"]["remaining_iterations"] == 0
-    assert obligations["schedule"]["guardrails"]["max_assessed_claims_per_focus"] == 20
+    assert obligations["executions"][0]["action_type"] == "search_more_evidence"
+    assert obligations["executions"][0]["status"] == "completed"
+    assert obligations["executions"][0]["landscape_path"]
+    assert obligations["schedule"]["decision"] == "defer"
+    assert all(
+        item["action_type"] != "search_more_evidence"
+        for item in obligations["open_obligations"]
+    )
+
+
+def test_obligation_loop_executes_assess_focus_action(tmp_path: Path) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="obligations-assess-focus",
+        wait_for_query_plan=False,
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_with_workflow_gaps_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_empty_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        obligation_iterations=1,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=_ObligationRuntime(),
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    assert len(state["artifacts"]["assessments"]) == 2
+    obligations = json.loads(Path(state["artifacts"]["obligations"]).read_text(encoding="utf-8"))
+    assert obligations["executions"][0]["action_type"] == "assess_focus"
+    assert obligations["executions"][0]["target_qid"] == "bleeding_tradeoff"
+    assert obligations["executions"][0]["assessment_path"]
+    assert all(
+        not (
+            item["action_type"] == "assess_focus"
+            and item.get("target_qid") == "bleeding_tradeoff"
+        )
+        for item in obligations["open_obligations"]
+    )
+
+
+def test_obligation_loop_executes_expand_focus_action(tmp_path: Path) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="obligations-expand-focus",
+        wait_for_query_plan=False,
+    )
+    runtime = _RecordingSearchRuntime()
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_with_expand_only_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_with_obligation_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        obligation_iterations=1,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=runtime,
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    obligations = json.loads(Path(state["artifacts"]["obligations"]).read_text(encoding="utf-8"))
+    assert runtime.queries == ["aspirin primary prevention subgroup evidence"]
+    assert obligations["executions"][0]["action_type"] == "expand_focus"
+    landscape = json.loads(
+        Path(obligations["executions"][0]["landscape_path"]).read_text(encoding="utf-8")
+    )
+    assert landscape["action"] == "obligation.expand_focus"
+    assert landscape["target"] == {"kind": "question", "id": "subgroup_evidence"}
+
+
+def test_obligation_loop_executes_close_coverage_gap_action(tmp_path: Path) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="obligations-close-coverage",
+        wait_for_query_plan=False,
+    )
+    runtime = _RecordingSearchRuntime()
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_with_coverage_gap_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_empty_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        obligation_iterations=1,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=runtime,
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    obligations = json.loads(Path(state["artifacts"]["obligations"]).read_text(encoding="utf-8"))
+    assert runtime.queries == [
+        "Close coverage gap missing_harms: Bleeding-harm evidence is not yet covered."
+    ]
+    assert obligations["executions"][0]["action_type"] == "close_coverage_gap"
+    landscape = json.loads(
+        Path(obligations["executions"][0]["landscape_path"]).read_text(encoding="utf-8")
+    )
+    assert landscape["action"] == "obligation.close_coverage_gap"
+    assert landscape["target"] == {"kind": "question", "id": "research_coverage"}
+
+
+def test_obligation_loop_executes_supported_deferred_workflow_action(
+    tmp_path: Path,
+) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="obligations-deferred-coverage",
+        wait_for_query_plan=False,
+    )
+    runtime = _DeferredCoverageRuntime()
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_empty_json(tmp_path / "assess.json")),
+        analysis_provider="checkpoint",
+        model=None,
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        obligation_iterations=1,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=runtime,
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    obligations = json.loads(Path(state["artifacts"]["obligations"]).read_text(encoding="utf-8"))
+    assert runtime.queries == [
+        "Close coverage gap missing_harms: Bleeding-harm evidence is thin."
+    ]
+    assert obligations["remaining_obligation_iterations"] == 0
+    assert obligations["executions"][0]["action_type"] == "close_coverage_gap"
+    assert obligations["executions"][0]["status"] == "completed"
+    assert all(
+        item["action_type"] != "close_coverage_gap"
+        for item in obligations["deferred_obligations"]
+    )
+
+
+def test_obligation_loop_uses_litellm_policy_to_order_supported_actions(
+    tmp_path: Path,
+) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="obligations-policy",
+        wait_for_query_plan=False,
+    )
+    runtime = _PolicyRuntime(
+        {
+            "schema_version": 1,
+            "kind": "research_obligation_policy",
+            "rankings": [
+                {
+                    "target_qid": "research_coverage",
+                    "action_type": "close_coverage_gap",
+                    "score": 0.99,
+                    "reason": "Bleeding-harm coverage changes the review conclusion.",
+                    "report_impact": "high",
+                    "uncertainty_reduction": "high",
+                }
+            ],
+        }
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_with_workflow_gaps_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=str(_assess_analysis_empty_json(tmp_path / "assess.json")),
+        analysis_provider="litellm",
+        model="test-model",
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="off",
+        evidence_max_items=8,
+        evidence_max_papers=5,
+        evidence_max_chains=3,
+        obligation_iterations=1,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=runtime,
+    )
+
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    obligations = json.loads(Path(state["artifacts"]["obligations"]).read_text(encoding="utf-8"))
+    assert runtime.policy_inputs
+    contract = runtime.policy_inputs[0]["contract"]
+    assert isinstance(contract, dict)
+    assert contract["contract"] == "gaia.research.obligation_policy"
+    assert runtime.queries == [
+        "Close coverage gap missing_harms: Bleeding-harm evidence is not yet covered."
+    ]
+    assert obligations["executions"][0]["action_type"] == "close_coverage_gap"
+    assert obligations["executions"][0]["policy_selection"]["reason"] == (
+        "Bleeding-harm coverage changes the review conclusion."
+    )
 
 
 def test_workflow_obligations_are_collected_before_report(tmp_path: Path) -> None:

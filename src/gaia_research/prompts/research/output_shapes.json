@@ -89,6 +89,20 @@
       "actionable"
     ]
   },
+  "obligation_policy": {
+    "required_top_level_keys": ["rankings"],
+    "rankings_item_keys": [
+      "target_qid",
+      "action_type",
+      "score",
+      "reason",
+      "report_impact",
+      "uncertainty_reduction",
+      "coverage_gain",
+      "cost"
+    ],
+    "note": "Rank only obligations present in input.obligations; the scheduler validates supported action types and budget."
+  },
   "report_plan": {
     "required_top_level_keys": [
       "title",

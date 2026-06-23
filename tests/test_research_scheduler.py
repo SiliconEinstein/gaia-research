@@ -85,6 +85,90 @@ def test_schedule_defers_when_obligation_loop_budget_is_exhausted() -> None:
     assert schedule["deferred_obligations"] == [open_obligation]
 
 
+def test_schedule_uses_supported_deferred_workflow_when_open_has_no_candidate() -> None:
+    deferred_supported = _workflow_obligation(
+        "close_coverage_gap",
+        target_id="research_coverage",
+        blocking=False,
+    )
+
+    schedule = plan_obligation_schedule(
+        open_obligations=[_workflow_obligation("check_method_scope", target_id="method_scope")],
+        deferred_obligations=[deferred_supported],
+        budget=ResearchRunBudget(obligation_iterations=1),
+    )
+
+    assert schedule["decision"] == "execute"
+    assert schedule["selected_action_type"] == "close_coverage_gap"
+    assert schedule["selected_obligation"] == deferred_supported
+    assert schedule["remaining_iterations"] == 0
+
+
+def test_schedule_uses_policy_score_for_supported_candidates() -> None:
+    coverage = _workflow_obligation(
+        "close_coverage_gap",
+        target_id="research_coverage",
+        blocking=False,
+    )
+    ready_focus = _workflow_obligation("assess_focus", target_id="ready_focus")
+
+    schedule = plan_obligation_schedule(
+        open_obligations=[ready_focus, coverage],
+        deferred_obligations=[],
+        budget=ResearchRunBudget(obligation_iterations=1),
+        policy={
+            "rankings": [
+                {
+                    "target_qid": "research_coverage",
+                    "action_type": "close_coverage_gap",
+                    "score": 0.95,
+                    "reason": "Coverage gap changes the review conclusion more than another focus.",
+                }
+            ]
+        },
+    )
+
+    assert schedule["decision"] == "execute"
+    assert schedule["selected_action_type"] == "close_coverage_gap"
+    assert schedule["selected_obligation"] == coverage
+    assert schedule["policy_selection"] == {
+        "target_qid": "research_coverage",
+        "action_type": "close_coverage_gap",
+        "score": 0.95,
+        "reason": "Coverage gap changes the review conclusion more than another focus.",
+    }
+
+
+def test_schedule_ignores_policy_for_missing_candidate() -> None:
+    ready_focus = _workflow_obligation("assess_focus", target_id="ready_focus")
+    coverage = _workflow_obligation(
+        "close_coverage_gap",
+        target_id="research_coverage",
+        blocking=False,
+    )
+
+    schedule = plan_obligation_schedule(
+        open_obligations=[ready_focus, coverage],
+        deferred_obligations=[],
+        budget=ResearchRunBudget(obligation_iterations=1),
+        policy={
+            "rankings": [
+                {
+                    "target_qid": "does_not_exist",
+                    "action_type": "close_coverage_gap",
+                    "score": 1.0,
+                    "reason": "This policy entry should not match anything.",
+                }
+            ]
+        },
+    )
+
+    assert schedule["decision"] == "execute"
+    assert schedule["selected_action_type"] == "assess_focus"
+    assert schedule["selected_obligation"] == ready_focus
+    assert schedule["policy_selection"] is None
+
+
 def test_schedule_ignores_future_research_and_unsupported_actions() -> None:
     future_research = _workflow_obligation(
         "check_method_scope",

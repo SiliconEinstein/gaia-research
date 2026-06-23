@@ -43,8 +43,11 @@ generation, or inference-backed formalization. A profile may still use field
 maps or other context-building steps before graph-asset authoring. The MVP
 includes a lightweight shared budget envelope plus an obligation scheduler:
 open obligations are either selected as the next workflow action or explicitly
-deferred. Full multi-round execution is built on this scheduler rather than a
-separate MVP mode.
+deferred. When a live LLM provider is available, the scheduler can use an
+advisory obligation-policy score to adjust ordering to the current research
+need; deterministic validation still decides whether an action is executable.
+Full multi-round execution is built on this scheduler rather than a separate MVP
+mode.
 
 ## LKM Dependency Decision
 
@@ -355,7 +358,7 @@ use the allowed inquiry kinds (`prior_hole`, `structural_hole`, `support_weak`,
 ```
 
 `obligation_type=workflow` covers auto-closeable actions the run can schedule
-later. The minimal scheduler supports:
+and execute inside the bounded obligation loop. The minimal dispatcher supports:
 
 - `assess_focus`: run evidence selection, materialization, and assessment for a
   ready focus;
@@ -367,9 +370,27 @@ later. The minimal scheduler supports:
 
 Other obligations, such as unresolved anchor repair or method-scope checks, may
 still be collected in Gaia inquiry state, but they remain deferred or manual
-until an auto-closeable action implementation exists. Future-research
-obligations cover important but non-blocking or not-yet-actionable follow-up
-work.
+until an auto-closeable action implementation exists. Deferred obligations are
+not all treated as future context: when the open queue has no supported
+candidate and budget remains, the scheduler may promote a deferred obligation
+only if it is explicitly marked `auto_closeable=true` and uses one of the
+supported action types. Future-research obligations cover important but
+non-blocking or not-yet-actionable follow-up work.
+
+Each loop iteration plans the highest-value supported obligation, executes it,
+records an `executions` entry in `trace/obligations.json`, removes that
+obligation from the run-local open queue, and refreshes open/deferred
+obligations from the new artifacts. Current execution closes obligations at the
+run-trace level; if Gaia core later exposes first-class obligation close/resolve
+state, the dispatcher should call that API from the same execution hook.
+
+With `analysis_provider=litellm`, each loop iteration may request a compact
+`gaia.research.obligation_policy` JSON object. The policy scores existing
+obligations by report impact, uncertainty reduction, coverage gain, and cost.
+It cannot create obligations or bypass validation: the scheduler only honors a
+policy entry if it matches an existing supported candidate within budget. If the
+policy does not match a valid candidate, the deterministic priority order is the
+fallback.
 
 ## Profile And Budget Model
 
@@ -549,6 +570,8 @@ requirements for graph-asset success.
    - The lightweight scheduler selects only supported auto-closeable workflow
      actions and records unsupported, manual, and future-research obligations
      separately.
+   - Optional LLM policy scoring may reorder supported candidates according to
+     current research value, but may not invent or execute unsupported actions.
    - Profiles control loop iterations; per-action guardrails remain shared.
 
 2. Keep report generation outside the MVP default path.

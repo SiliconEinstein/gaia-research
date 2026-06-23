@@ -591,6 +591,85 @@ def propose_contract(*, language: str = "zh") -> dict[str, Any]:
     }
 
 
+def obligation_policy_contract(*, language: str = "zh") -> dict[str, Any]:
+    """Return the JSON contract for adaptive obligation scheduling policy."""
+    return {
+        "contract": "gaia.research.obligation_policy",
+        "schema_version": 1,
+        "language": language,
+        "purpose": (
+            "Score existing research obligations for the next bounded scheduler step. "
+            "This is advice only: the deterministic scheduler validates that selected "
+            "obligations are supported, auto-closeable, in budget, and grounded."
+        ),
+        "input": {
+            "topic": "The user's review or evidence-assessment topic.",
+            "graph_summary": (
+                "Compact summary of current focuses, assessed focuses, relation counts, "
+                "claim counts, and coverage gaps."
+            ),
+            "obligations": (
+                "Existing open and deferred obligations. Score only these obligations; "
+                "do not invent new targets or new obligations."
+            ),
+            "budget": "Remaining obligation iterations and per-action guardrails.",
+            "previous_executions": "Actions already taken in this run.",
+        },
+        "output_required_fields": {
+            "rankings": "list[Ranking] ordered or scored by expected research value",
+        },
+        "ranking_fields": {
+            "target_qid": "target_qid from one input obligation",
+            "action_type": (
+                "supported executable action type from the input obligation; do not invent "
+                "new action types"
+            ),
+            "score": "number from 0.0 to 1.0; higher means execute earlier",
+            "reason": "brief reason this obligation should be prioritized now",
+            "report_impact": "optional high, medium, low",
+            "uncertainty_reduction": "optional high, medium, low",
+            "coverage_gain": "optional high, medium, low",
+            "cost": "optional high, medium, low",
+        },
+        "forbidden_outputs": [
+            "Do not create new obligations.",
+            "Do not choose future_research, manual, or unsupported actions.",
+            "Do not claim a scientific conclusion; only score next workflow actions.",
+            "Do not output Markdown or prose outside the JSON object.",
+        ],
+        "analysis_guidance": [
+            (
+                "Prioritize obligations that most affect the eventual review conclusion, "
+                "reduce uncertainty around central competing claims, or unblock later "
+                "assessment."
+            ),
+            (
+                "A lower-level action can outrank assess_focus if it is a stronger blocker "
+                "for interpreting evidence, such as resolving model mismatch or coverage gaps."
+            ),
+            (
+                "When several obligations have similar value, prefer lower cost and less "
+                "duplicate search."
+            ),
+            "Use target_qid and action_type exactly as provided in the input obligation.",
+        ],
+        "example": {
+            "rankings": [
+                {
+                    "target_qid": "research_coverage",
+                    "action_type": "close_coverage_gap",
+                    "score": 0.91,
+                    "reason": "Experimental coverage affects whether the review can discuss scope.",
+                    "report_impact": "high",
+                    "uncertainty_reduction": "medium",
+                    "coverage_gain": "high",
+                    "cost": "medium",
+                }
+            ]
+        },
+    }
+
+
 def research_contract(kind: str, *, language: str = "zh") -> dict[str, Any]:
     """Return one named research contract."""
     normalized = kind.strip().lower()
@@ -602,10 +681,13 @@ def research_contract(kind: str, *, language: str = "zh") -> dict[str, Any]:
         return focus_contract(language=language)
     if normalized in {"assess", "assessment", "assessment_analysis"}:
         return assess_contract(language=language)
+    if normalized in {"obligation_policy", "obligation-policy", "policy", "scheduler_policy"}:
+        return obligation_policy_contract(language=language)
     if normalized in {"propose", "proposal", "proposal_analysis"}:
         return propose_contract(language=language)
     raise ResearchContractError(
-        "supported contracts are: query_plan, field_map, focus, assess, propose"
+        "supported contracts are: query_plan, field_map, focus, assess, "
+        "obligation_policy, propose"
     )
 
 
@@ -615,6 +697,7 @@ __all__ = [
     "assess_contract",
     "field_map_contract",
     "focus_contract",
+    "obligation_policy_contract",
     "propose_contract",
     "query_plan_contract",
     "research_contract",

@@ -13,6 +13,7 @@ RESEARCH_PROMPT_PHASES = (
     "field_map_analysis",
     "focus_analysis",
     "assess_analysis",
+    "obligation_policy",
     "report_plan",
     "report_section",
     "report_stitch",
