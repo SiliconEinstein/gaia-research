@@ -58,10 +58,12 @@ def test_assess_contract_keeps_assessment_structured_not_article_shaped() -> Non
 
     required = contract["output_required_fields"]
     optional = contract["output_optional_fields"]
-    assert set(required) == {"relations", "candidate_obligations"}
+    assert set(required) == {"new_claims", "relations", "candidate_obligations"}
     assert "limitations" in optional
     assert "next_queries" in optional
 
     payload = json.dumps(contract, ensure_ascii=False)
     assert "Do not write the final report" in payload
     assert "mini-review" in payload
+    assert "new_claims" in payload
+    assert "lkm:<package>::<label>" in payload

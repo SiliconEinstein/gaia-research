@@ -67,7 +67,12 @@ from gaia_research.research_providers import (
 from gaia_research.research_runtime import (
     _read_json_object_path,
 )
-from gaia_research.run import RUN_MODES, ResearchRunStart, start_research_run
+from gaia_research.run import (
+    GRAPH_ASSET_OUTPUT_CONTRACT,
+    RUN_MODES,
+    ResearchRunStart,
+    start_research_run,
+)
 
 research_app = typer.Typer(
     name="research",
@@ -87,6 +92,8 @@ AGENT_SKILLS: tuple[str, ...] = (
     "gaia-research-status",
     "gaia-research-artifacts",
 )
+
+MIN_ASSESSMENT_EVIDENCE_ITEMS = 10
 
 REPORT_WORKFLOW: tuple[str, ...] = (
     "topic",
@@ -379,8 +386,12 @@ def _validate_evidence_selection_limits(
     max_papers: int,
     max_chains: int,
 ) -> None:
-    if max_items < 1 or max_items > 200:
-        typer.echo("Error: --evidence-max-items must be between 1 and 200.", err=True)
+    if max_items < MIN_ASSESSMENT_EVIDENCE_ITEMS or max_items > 200:
+        typer.echo(
+            "Error: --evidence-max-items must be between "
+            f"{MIN_ASSESSMENT_EVIDENCE_ITEMS} and 200.",
+            err=True,
+        )
         raise typer.Exit(2)
     if max_papers < 1 or max_papers > 100:
         typer.echo("Error: --evidence-max-papers must be between 1 and 100.", err=True)
@@ -1194,6 +1205,13 @@ def run_command(
         str,
         typer.Option("--profile", help="Research profile used by the fixed pipeline."),
     ] = "fast",
+    no_report: Annotated[
+        bool,
+        typer.Option(
+            "--no-report",
+            help="Run the graph-assets workflow only and skip report generation.",
+        ),
+    ] = False,
     run_id: Annotated[
         str | None,
         typer.Option("--run-id", help="Optional deterministic run id for tests or UI callers."),
@@ -1365,7 +1383,7 @@ def run_command(
         int | None,
         typer.Option(
             "--evidence-max-papers",
-            help="Maximum selected paper leads/materialized papers per assessed focus.",
+            help="Maximum selected paper leads used for assessment context per focus.",
             hidden=True,
         ),
     ] = None,
@@ -1430,7 +1448,6 @@ def run_command(
             evidence_max_chains=evidence_max_chains,
         ),
     )
-
     _validate_run_options(
         mode=mode,
         analysis_provider=run_config.llm.provider,
@@ -1452,6 +1469,7 @@ def run_command(
     targeted_queries = list(targeted_query or [])
     can_auto_query_plan = run_config.llm.provider == "litellm"
     try:
+        output_contracts = [GRAPH_ASSET_OUTPUT_CONTRACT] if no_report else None
         run = start_research_run(
             research_pkg,
             topic=topic,
@@ -1460,6 +1478,7 @@ def run_command(
             profile=run_config.profile,
             run_id=run_id,
             wait_for_query_plan=not (broad_search_refs or broad_queries or can_auto_query_plan),
+            output_contracts=output_contracts,
         )
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
@@ -1556,6 +1575,7 @@ def run_command(
                 evidence_max_items=run_config.evidence.max_items,
                 evidence_max_papers=run_config.evidence.max_papers,
                 evidence_max_chains=run_config.evidence.max_chains,
+                obligation_iterations=run_config.scheduler.obligation_iterations,
                 focus_analysis_command=focus_analysis_command,
                 assess_analysis_command=assess_analysis_command,
                 json_stream=json_stream,

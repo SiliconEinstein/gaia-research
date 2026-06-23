@@ -164,6 +164,41 @@ def test_run_command_accepts_topic_workspace_and_fast_profile(
     assert payload["topic"] == "aspirin primary prevention"
 
 
+def test_run_command_can_disable_report_for_graph_asset_only_surface(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = _write_research_package(tmp_path / "workspace")
+    config = _write_checkpoint_config(tmp_path / "checkpoint.json")
+
+    exit_code = cli.main(
+        [
+            "run",
+            str(workspace),
+            "--topic",
+            "deconfined criticality",
+            "--profile",
+            "fast",
+            "--no-report",
+            "--config",
+            str(config),
+            "--run-id",
+            "dqc-mvp",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profile"] == "fast"
+    state_path = workspace / ".gaia" / "research" / "runs" / "dqc-mvp" / "state.json"
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["mode"] == "fast-package-native"
+    assert payload["output_contract"] == "gaia_graph_assets"
+    assert payload["output_contracts"] == ["gaia_graph_assets"]
+    assert "requires_report" not in payload
+
+
 def test_run_command_resumes_query_plan_with_default_topic_query(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

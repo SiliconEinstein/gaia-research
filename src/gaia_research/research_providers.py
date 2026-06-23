@@ -608,7 +608,9 @@ def _compact_selected_evidence(payload: dict[str, object]) -> dict[str, object]:
     evidence_packet = payload.get("evidence_packet")
     packet = evidence_packet if isinstance(evidence_packet, dict) else {}
     materialization_plan = payload.get("materialization_plan")
-    materialization_result = payload.get("materialization_result")
+    materialization_summary = payload.get("materialization_summary")
+    if not isinstance(materialization_summary, dict):
+        materialization_summary = _materialization_summary(payload.get("materialization_result"))
     return {
         "schema_version": payload.get("schema_version"),
         "kind": payload.get("kind"),
@@ -616,7 +618,11 @@ def _compact_selected_evidence(payload: dict[str, object]) -> dict[str, object]:
         "focus": payload.get("focus"),
         "selection": payload.get("selection"),
         "materialization_plan": materialization_plan,
-        "materialization_summary": _materialization_summary(materialization_result),
+        "materialization_manifest": payload.get("materialization_manifest"),
+        "materialization_summary": materialization_summary,
+        "anchors": [_compact_anchor(item) for item in _list_of_dicts(payload.get("anchors"))],
+        "available_claim_refs": _available_claim_refs(payload.get("anchors")),
+        "deferred_obligations": payload.get("deferred_obligations"),
         "evidence_packet": {
             "landscapes": packet.get("landscapes"),
             "items": [
@@ -627,6 +633,31 @@ def _compact_selected_evidence(payload: dict[str, object]) -> dict[str, object]:
             ],
         },
     }
+
+
+def _compact_anchor(item: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": item.get("id"),
+        "kind": item.get("kind"),
+        "source_ref": item.get("source_ref"),
+        "import_name": item.get("import_name"),
+        "symbol": item.get("symbol"),
+        "ref": item.get("ref"),
+        "status": item.get("status"),
+    }
+
+
+def _available_claim_refs(anchors: object) -> list[dict[str, object]]:
+    refs: list[dict[str, object]] = []
+    for anchor in _list_of_dicts(anchors):
+        if anchor.get("status") != "resolved" or anchor.get("kind") != "claim":
+            continue
+        ref = anchor.get("ref")
+        anchor_id = anchor.get("id")
+        if not isinstance(ref, str) or not ref or not isinstance(anchor_id, str):
+            continue
+        refs.append({"id": anchor_id, "ref": ref, "source_ref": anchor.get("source_ref")})
+    return refs
 
 
 def _compact_assessment(payload: dict[str, object]) -> dict[str, object]:

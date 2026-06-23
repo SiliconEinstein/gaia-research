@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sys
@@ -152,6 +153,7 @@ def _lkm_materialized_payload(
         "claim_count": int(materialized.claim_count),
         "question_count": int(materialized.question_count),
         "dependency_count": int(materialized.dependency_count),
+        "symbol_refs": _lkm_symbol_refs(materialized),
     }
     chain_count = getattr(materialized, "chain_count", None)
     if isinstance(chain_count, int):
@@ -160,6 +162,62 @@ def _lkm_materialized_payload(
     if isinstance(total_chains, int):
         payload["total_chains"] = total_chains
     return payload
+
+
+def _lkm_symbol_refs(materialized: Any) -> list[dict[str, object]]:
+    root = getattr(materialized, "root", None)
+    import_name = getattr(materialized, "import_name", None)
+    if not isinstance(root, Path) or not isinstance(import_name, str) or not import_name:
+        return []
+    module_path = root / "src" / import_name / "__init__.py"
+    if not module_path.exists():
+        return []
+    try:
+        tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+    except SyntaxError:
+        return []
+
+    refs: list[dict[str, object]] = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        call = node.value
+        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+            continue
+        kind = call.func.id
+        if kind not in {"claim", "question"}:
+            continue
+        metadata = _literal_call_kwarg(call, "metadata")
+        if not isinstance(metadata, dict):
+            continue
+        node_id = metadata.get("node_id")
+        local_id = metadata.get("local_id")
+        source_ref = metadata.get("source_ref")
+        refs.append(
+            {
+                "node_id": node_id if isinstance(node_id, str) else None,
+                "local_id": local_id if isinstance(local_id, str) else None,
+                "kind": kind,
+                "symbol": target.id,
+                "ref": f"lkm:{import_name}::{target.id}",
+                "source_ref": source_ref if isinstance(source_ref, str) else None,
+            }
+        )
+    return refs
+
+
+def _literal_call_kwarg(call: ast.Call, name: str) -> object:
+    for keyword in call.keywords:
+        if keyword.arg != name:
+            continue
+        try:
+            return ast.literal_eval(keyword.value)
+        except (ValueError, SyntaxError):
+            return None
+    return None
 
 
 def _materialize_lkm_papers_or_exit(

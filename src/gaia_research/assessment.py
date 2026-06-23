@@ -40,6 +40,7 @@ def build_assessment_artifact(
     focus: dict[str, Any],
     evidence_packet: dict[str, Any],
     relations: list[dict[str, Any]],
+    new_claims: list[dict[str, Any]] | None = None,
     candidate_obligations: list[dict[str, Any]] | None = None,
     review: dict[str, Any] | None = None,
     limitations: list[str] | None = None,
@@ -47,6 +48,7 @@ def build_assessment_artifact(
 ) -> dict[str, Any]:
     """Build a v1 assessment artifact dictionary without writing source."""
     relation_payloads = [dict(relation) for relation in relations]
+    new_claim_payloads = [dict(item) for item in new_claims or []]
     obligation_payloads = [dict(item) for item in candidate_obligations or []]
     limitation_payloads = list(limitations or [])
     next_query_payloads = list(next_queries or [])
@@ -64,10 +66,12 @@ def build_assessment_artifact(
         "citations": _citations_from_refs(
             evidence_packet,
             relations=relation_payloads,
+            new_claims=new_claim_payloads,
             candidate_obligations=obligation_payloads,
             review=citation_review if citation_review else None,
         ),
         "relations": relation_payloads,
+        "new_claims": new_claim_payloads,
         "candidate_obligations": obligation_payloads,
     }
     if limitation_payloads:
@@ -103,6 +107,7 @@ def _source_ref_id(ref: dict[str, Any]) -> str | None:
 def _cited_ref_ids(
     *,
     relations: list[dict[str, Any]],
+    new_claims: list[dict[str, Any]],
     candidate_obligations: list[dict[str, Any]],
     review: dict[str, Any] | None = None,
 ) -> dict[str, set[str]]:
@@ -114,7 +119,7 @@ def _cited_ref_ids(
         "package_ref": set(),
         "paper": set(),
     }
-    for ref in _iter_source_refs([*relations, *candidate_obligations]):
+    for ref in _iter_source_refs([*relations, *new_claims, *candidate_obligations]):
         kind = ref.get("kind")
         ref_id = _source_ref_id(ref)
         if isinstance(kind, str) and kind in cited and ref_id:
@@ -212,11 +217,13 @@ def _citations_from_refs(
     evidence_packet: dict[str, Any],
     *,
     relations: list[dict[str, Any]],
+    new_claims: list[dict[str, Any]],
     candidate_obligations: list[dict[str, Any]],
     review: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     cited = _cited_ref_ids(
         relations=relations,
+        new_claims=new_claims,
         candidate_obligations=candidate_obligations,
         review=review,
     )
@@ -534,6 +541,18 @@ def _repair_claim_refs(
     return repaired
 
 
+def _repair_promotion_hint(relation: dict[str, Any]) -> None:
+    relation_type = relation.get("type")
+    if not isinstance(relation_type, str):
+        return
+    allowed_hints = RELATION_PROMOTION_HINTS.get(relation_type)
+    if allowed_hints is None:
+        return
+    hint = relation.get("promotion_hint", "none")
+    if not isinstance(hint, str) or not hint or hint not in allowed_hints:
+        relation["promotion_hint"] = "none"
+
+
 def _repair_grounded_relations(
     relations: list[Any],
     *,
@@ -566,6 +585,7 @@ def _repair_grounded_relations(
                 repaired.get("claims"),
                 package_ref_value_types=package_ref_value_types,
             )
+        _repair_promotion_hint(repaired)
         repaired_relations.append(repaired)
     return repaired_relations
 
@@ -576,6 +596,17 @@ def validate_assessment_grounding(artifact: dict[str, Any]) -> dict[str, Any]:
     focus = _require_dict(artifact.get("focus"), "focus")
     valid_ids = _valid_grounding_ids(evidence_packet, focus=focus)
     package_ref_value_types = _package_ref_value_types(evidence_packet)
+    for claim_index, claim in enumerate(artifact.get("new_claims", [])):
+        claim_payload = _require_dict(claim, f"new_claims[{claim_index}]")
+        for ref_index, ref in enumerate(claim_payload.get("source_refs", [])):
+            ref_payload = _require_dict(
+                ref, f"new_claims[{claim_index}].source_refs[{ref_index}]"
+            )
+            _validate_source_ref_payload(
+                ref_payload,
+                valid_ids=valid_ids,
+                field=f"new_claims[{claim_index}].source_refs[{ref_index}]",
+            )
     for relation_index, relation in enumerate(artifact.get("relations", [])):
         relation_payload = _require_dict(relation, f"relations[{relation_index}]")
         for ref_index, ref in enumerate(relation_payload.get("source_refs", [])):
@@ -613,6 +644,9 @@ def build_assessment_from_analysis(
     relations = analysis.get("relations", [])
     if not isinstance(relations, list):
         raise AssessmentSchemaError("analysis.relations must be a list")
+    new_claims = analysis.get("new_claims", [])
+    if not isinstance(new_claims, list):
+        raise AssessmentSchemaError("analysis.new_claims must be a list")
     candidate_obligations = analysis.get("candidate_obligations", [])
     if not isinstance(candidate_obligations, list):
         raise AssessmentSchemaError("analysis.candidate_obligations must be a list")
@@ -636,6 +670,7 @@ def build_assessment_from_analysis(
         focus=focus,
         evidence_packet=evidence_packet,
         relations=relations,
+        new_claims=[dict(item) for item in new_claims if isinstance(item, dict)],
         candidate_obligations=candidate_obligations,
         review=review,
         limitations=[item for item in limitations if isinstance(item, str) and item],
@@ -667,6 +702,18 @@ def _validate_source_refs(source_refs: Any) -> None:
         ref_payload = _require_dict(ref, f"source_refs[{index}]")
         _require_non_empty_string(ref_payload, "kind")
         _require_non_empty_string(ref_payload, "id")
+
+
+def validate_assessment_new_claim(claim: dict[str, Any]) -> dict[str, Any]:
+    """Validate one ordinary Gaia claim scheduled for authoring."""
+    _require_non_empty_string(claim, "id")
+    _require_non_empty_string(claim, "claim")
+    _validate_source_refs(claim.get("source_refs"))
+    for field in ("category", "status", "answers_question", "rationale"):
+        value = claim.get(field)
+        if value is not None and not isinstance(value, str):
+            raise AssessmentSchemaError(f"new_claim.{field} must be a string")
+    return claim
 
 
 def validate_assessment_relation(relation: dict[str, Any]) -> dict[str, Any]:
@@ -761,6 +808,12 @@ def validate_assessment_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
     for index, relation in enumerate(relations):
         validate_assessment_relation(_require_dict(relation, f"relations[{index}]"))
 
+    new_claims = artifact.get("new_claims", [])
+    if not isinstance(new_claims, list):
+        raise AssessmentSchemaError("new_claims must be a list")
+    for index, claim in enumerate(new_claims):
+        validate_assessment_new_claim(_require_dict(claim, f"new_claims[{index}]"))
+
     candidate_obligations = artifact.get("candidate_obligations")
     if not isinstance(candidate_obligations, list):
         raise AssessmentSchemaError("candidate_obligations must be a list")
@@ -792,5 +845,6 @@ __all__ = [
     "build_assessment_from_landscapes",
     "validate_assessment_artifact",
     "validate_assessment_grounding",
+    "validate_assessment_new_claim",
     "validate_assessment_relation",
 ]

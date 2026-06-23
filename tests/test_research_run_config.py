@@ -16,32 +16,62 @@ def test_fast_profile_is_supported_as_product_alias() -> None:
     assert config.search.limit == 10
     assert config.focus.count == 1
     assert config.evidence.selection_mode == "fast"
+    assert config.evidence.max_items == 20
+    assert config.evidence.max_papers == 20
+    assert config.evidence.max_chains == 20
+    assert config.scheduler.obligation_iterations == 1
 
 
-def test_broad_profile_uses_wider_search_and_focus_defaults() -> None:
+def test_profiles_share_per_action_guardrails_and_only_scale_loop_iterations() -> None:
+    fast = resolve_research_run_config(profile="fast")
+    broad = resolve_research_run_config(profile="broad")
+    deep = resolve_research_run_config(profile="deep")
+
+    assert {
+        (config.search.limit, config.focus.count, config.evidence.selection_mode)
+        for config in (fast, broad, deep)
+    } == {(10, 1, "fast")}
+    assert {
+        (
+            config.evidence.max_items,
+            config.evidence.max_papers,
+            config.evidence.max_chains,
+        )
+        for config in (fast, broad, deep)
+    } == {(20, 20, 20)}
+    assert [
+        fast.scheduler.obligation_iterations,
+        broad.scheduler.obligation_iterations,
+        deep.scheduler.obligation_iterations,
+    ] == [1, 5, 10]
+
+
+def test_broad_profile_keeps_uniform_action_guardrails() -> None:
     config = resolve_research_run_config(profile="broad")
 
     assert config.profile == "broad"
     assert config.llm.provider == "litellm"
-    assert config.search.limit == 20
-    assert config.focus.count == 3
+    assert config.search.limit == 10
+    assert config.focus.count == 1
     assert config.evidence.selection_mode == "fast"
-    assert config.evidence.max_items == 24
-    assert config.evidence.max_papers == 10
-    assert config.evidence.max_chains == 10
+    assert config.evidence.max_items == 20
+    assert config.evidence.max_papers == 20
+    assert config.evidence.max_chains == 20
+    assert config.scheduler.obligation_iterations == 5
 
 
-def test_deep_profile_uses_wider_evidence_selection_defaults() -> None:
+def test_deep_profile_keeps_uniform_action_guardrails() -> None:
     config = resolve_research_run_config(profile="deep")
 
     assert config.profile == "deep"
     assert config.llm.provider == "litellm"
-    assert config.search.limit == 20
-    assert config.focus.count == 5
-    assert config.evidence.selection_mode == "review"
-    assert config.evidence.max_items == 48
+    assert config.search.limit == 10
+    assert config.focus.count == 1
+    assert config.evidence.selection_mode == "fast"
+    assert config.evidence.max_items == 20
     assert config.evidence.max_papers == 20
     assert config.evidence.max_chains == 20
+    assert config.scheduler.obligation_iterations == 10
 
 
 def test_legacy_profiles_are_rejected() -> None:
@@ -76,10 +106,11 @@ def test_config_file_and_overrides_deep_merge(tmp_path: Path) -> None:
 
     assert config.profile == "broad"
     assert config.search.limit == 7
-    assert config.focus.count == 3
+    assert config.focus.count == 1
     assert config.evidence.selection_mode == "fast"
     assert config.evidence.max_items == 24
     assert config.evidence.max_papers == 9
+    assert config.scheduler.obligation_iterations == 5
     assert config.llm.provider == "litellm"
     assert config.llm.model == "openai/test"
     assert config.report.section_concurrency == 2

@@ -29,6 +29,8 @@ from gaia.engine.inquiry.state import (
 )
 
 from gaia_research.artifacts import ResearchPackage
+from gaia_research.graph_assets import project_evidence_matrix_rows
+from gaia_research.obligations import research_obligation_anchor
 from gaia_research.report import render_assessment_review_note_markdown
 
 JsonDict = dict[str, Any]
@@ -58,11 +60,15 @@ class ResearchSyncResult:
     questions_skipped: list[str] = field(default_factory=list)
     notes_written: list[str] = field(default_factory=list)
     notes_skipped: list[str] = field(default_factory=list)
+    claims_written: list[str] = field(default_factory=list)
+    claims_skipped: list[str] = field(default_factory=list)
     candidate_relations_written: list[str] = field(default_factory=list)
     candidate_relations_skipped: list[str] = field(default_factory=list)
+    evidence_matrix_rows: list[JsonDict] = field(default_factory=list)
     materializations_written: list[str] = field(default_factory=list)
     materializations_skipped: list[str] = field(default_factory=list)
     obligations_added: list[str] = field(default_factory=list)
+    open_obligations: list[JsonDict] = field(default_factory=list)
     obligations_deferred: list[JsonDict] = field(default_factory=list)
     obligations_skipped: int = 0
     hypotheses_added: list[str] = field(default_factory=list)
@@ -89,11 +95,15 @@ class ResearchSyncResult:
             "questions_skipped": list(self.questions_skipped),
             "notes_written": list(self.notes_written),
             "notes_skipped": list(self.notes_skipped),
+            "claims_written": list(self.claims_written),
+            "claims_skipped": list(self.claims_skipped),
             "candidate_relations_written": list(self.candidate_relations_written),
             "candidate_relations_skipped": list(self.candidate_relations_skipped),
+            "evidence_matrix_rows": list(self.evidence_matrix_rows),
             "materializations_written": list(self.materializations_written),
             "materializations_skipped": list(self.materializations_skipped),
             "obligations_added": list(self.obligations_added),
+            "open_obligations": list(self.open_obligations),
             "obligations_deferred": list(self.obligations_deferred),
             "obligations_skipped": self.obligations_skipped,
             "hypotheses_added": list(self.hypotheses_added),
@@ -139,6 +149,80 @@ def _binding_exists(path: Path, binding: str) -> bool:
         return False
     source = path.read_text(encoding="utf-8")
     return re.search(rf"^\s*{re.escape(binding)}\s*=", source, flags=re.MULTILINE) is not None
+
+
+@dataclass(frozen=True)
+class _AuthoredClaim:
+    binding: str
+    text: str
+    source_claim_id: str | None
+
+
+def _normalized_claim_text(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _call_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _keyword_literal(call: ast.Call, name: str) -> object:
+    for keyword in call.keywords:
+        if keyword.arg != name:
+            continue
+        try:
+            return ast.literal_eval(keyword.value)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _authored_claims(path: Path) -> list[_AuthoredClaim]:
+    if not path.exists():
+        return []
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except SyntaxError:
+        return []
+    claims: list[_AuthoredClaim] = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        if _call_name(call.func) != "claim":
+            continue
+        target = node.targets[0] if node.targets else None
+        if not isinstance(target, ast.Name):
+            continue
+        if not call.args:
+            continue
+        try:
+            claim_text = ast.literal_eval(call.args[0])
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(claim_text, str) or not claim_text.strip():
+            continue
+        metadata = _keyword_literal(call, "metadata")
+        research_metadata = (
+            metadata.get("gaia_research") if isinstance(metadata, dict) else None
+        )
+        source_claim_id = (
+            research_metadata.get("source_claim_id")
+            if isinstance(research_metadata, dict)
+            else None
+        )
+        claims.append(
+            _AuthoredClaim(
+                binding=target.id,
+                text=claim_text.strip(),
+                source_claim_id=source_claim_id if isinstance(source_claim_id, str) else None,
+            )
+        )
+    return claims
 
 
 def _assert_parseable_authored_source(path: Path) -> None:
@@ -222,13 +306,97 @@ def _add_hypothesis_once(
     result.hypotheses_added.append(hypothesis.qid)
 
 
-def _add_obligation_once(
-    pkg: ResearchPackage,
+def _clean_text(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _obligation_record(
     *,
     target_qid: str,
     content: str,
     diagnostic_kind: str,
+    target: JsonDict | None,
+    action_type: str | None,
+    action: str | None,
     anchor: JsonDict,
+    source_refs: object,
+    qid: str | None = None,
+) -> JsonDict:
+    record: JsonDict = {}
+    if qid is not None:
+        record["qid"] = qid
+    record["target"] = target if target is not None else {"kind": "question", "id": target_qid}
+    record["target_qid"] = target_qid
+    record["action_type"] = action_type or diagnostic_kind
+    record["action"] = action or content
+    record["content"] = content
+    record["diagnostic_kind"] = diagnostic_kind
+    if anchor:
+        record["anchor"] = anchor
+    if isinstance(source_refs, list):
+        record["source_refs"] = source_refs
+    return record
+
+
+def _obligation_target(payload: JsonDict, *, default_qid: str) -> JsonDict:
+    target = payload.get("target")
+    if isinstance(target, dict):
+        kind = _clean_text(target.get("kind"))
+        ref = _clean_text(target.get("ref"))
+        target_id = _clean_text(target.get("id"))
+        if kind is not None and (ref is not None or target_id is not None):
+            normalized: JsonDict = {"kind": kind}
+            if ref is not None:
+                normalized["ref"] = ref
+            if target_id is not None:
+                normalized["id"] = target_id
+            return normalized
+    return {"kind": "question", "id": default_qid}
+
+
+def _target_qid(target: JsonDict) -> str:
+    for key in ("ref", "id"):
+        value = _clean_text(target.get(key))
+        if value is not None:
+            return value
+    return "research_obligation"
+
+
+def _obligation_action_type(payload: JsonDict, *, raw_kind: str) -> str:
+    return _clean_text(payload.get("action_type")) or raw_kind
+
+
+def _obligation_action(payload: JsonDict, *, fallback: str | None) -> str | None:
+    return _clean_text(payload.get("action")) or fallback
+
+
+def _obligation_content(payload: JsonDict, *, action_type: str, action: str) -> str:
+    note = _clean_text(payload.get("content"))
+    has_structured_action = (
+        _clean_text(payload.get("action_type")) is not None
+        or _clean_text(payload.get("action")) is not None
+    )
+    if not has_structured_action:
+        return note or action
+    parts = [f"action_type={action_type}", f"action={action}"]
+    if note is not None and note != action:
+        parts.append(f"note={note}")
+    return "; ".join(parts)
+
+
+def _add_obligation_once(
+    pkg: ResearchPackage,
+    *,
+    target_qid: str,
+    target: JsonDict | None = None,
+    content: str,
+    diagnostic_kind: str,
+    anchor: JsonDict,
+    action_type: str | None = None,
+    action: str | None = None,
+    source_refs: object = None,
     result: ResearchSyncResult,
 ) -> None:
     if not result.writes_inquiry:
@@ -242,6 +410,19 @@ def _add_obligation_once(
             and existing.diagnostic_kind == diagnostic_kind
         ):
             result.obligations_skipped += 1
+            result.open_obligations.append(
+                _obligation_record(
+                    qid=existing.qid,
+                    target=target,
+                    target_qid=target_qid,
+                    action_type=action_type,
+                    action=action,
+                    content=content,
+                    diagnostic_kind=diagnostic_kind,
+                    anchor=anchor,
+                    source_refs=source_refs,
+                )
+            )
             return
     obligation = SyntheticObligation(
         qid=mint_qid("oblig"),
@@ -263,23 +444,44 @@ def _add_obligation_once(
         },
     )
     result.obligations_added.append(obligation.qid)
+    result.open_obligations.append(
+        _obligation_record(
+            qid=obligation.qid,
+            target=target,
+            target_qid=target_qid,
+            action_type=action_type,
+            action=action,
+            content=content,
+            diagnostic_kind=diagnostic_kind,
+            anchor=anchor,
+            source_refs=source_refs,
+        )
+    )
 
 
 def _defer_obligation(
     *,
     target_qid: str,
+    target: JsonDict | None = None,
     content: str,
     diagnostic_kind: str,
     anchor: JsonDict,
+    action_type: str | None = None,
+    action: str | None = None,
+    source_refs: object = None,
     result: ResearchSyncResult,
 ) -> None:
     result.obligations_deferred.append(
-        {
-            "target_qid": target_qid,
-            "content": content,
-            "diagnostic_kind": diagnostic_kind,
-            "anchor": anchor,
-        }
+        _obligation_record(
+            target=target,
+            target_qid=target_qid,
+            action_type=action_type,
+            action=action,
+            content=content,
+            diagnostic_kind=diagnostic_kind,
+            anchor=anchor,
+            source_refs=source_refs,
+        )
     )
 
 
@@ -290,6 +492,43 @@ def _is_actionable_obligation(payload: JsonDict) -> bool:
             return value
     status = payload.get("status")
     return isinstance(status, str) and status in {"actionable", "blocking"}
+
+
+def _diagnostic_kind_for_obligation(*, raw_kind: str, action_type: str) -> str:
+    if raw_kind in {
+        "prior_hole",
+        "structural_hole",
+        "support_weak",
+        "focus_weakness",
+        "other",
+    }:
+        return raw_kind
+    if raw_kind == "needs_more_evidence" or action_type in {
+        "search_more_evidence",
+        "assess_claim",
+    }:
+        return "support_weak"
+    if action_type in {"resolve_anchor", "materialize_package", "repair_relation", "repair_refs"}:
+        return "structural_hole"
+    if action_type in {"assess_focus", "expand_focus", "review_focus", "close_coverage_gap"}:
+        return "focus_weakness"
+    return "other"
+
+
+def _obligation_budget_class(action_type: str) -> str:
+    if action_type in {"search_more_evidence", "assess_claim"}:
+        return "evidence"
+    if action_type in {"resolve_anchor", "materialize_package"}:
+        return "materialization"
+    if action_type in {"repair_relation", "repair_refs"}:
+        return "graph_repair"
+    if action_type in {"assess_focus"}:
+        return "assessment"
+    if action_type in {"expand_focus"}:
+        return "expansion"
+    if action_type in {"close_coverage_gap"}:
+        return "coverage"
+    return "research"
 
 
 def _set_focus(pkg: ResearchPackage, *, focus: str, kind: str, result: ResearchSyncResult) -> None:
@@ -411,11 +650,34 @@ def _sync_focus_coverage_gaps(
         description = gap.get("description")
         if not isinstance(description, str) or not description.strip():
             continue
+        gap_id = str(gap.get("id") or "coverage_gap")
+        target = {"kind": "question", "id": target_qid}
+        action = f"Close coverage gap {gap_id}: {description.strip()}"
+        source_refs = gap.get("evidence_refs")
+        anchor = {
+            "kind": "focus_coverage_gap",
+            "id": gap.get("id"),
+            **research_obligation_anchor(
+                source_kind="focus_coverage_gap",
+                obligation_type="workflow",
+                action_type="close_coverage_gap",
+                target=target,
+                auto_closeable=True,
+                blocking=False,
+                budget_class="coverage",
+                source="focus_artifact",
+                extra={"coverage_gap_id": gap_id},
+            ),
+        }
         _defer_obligation(
+            target=target,
             target_qid=target_qid,
             content=description.strip(),
             diagnostic_kind="focus_weakness",
-            anchor={"kind": "focus_coverage_gap", "id": gap.get("id")},
+            action_type="close_coverage_gap",
+            action=action,
+            anchor=anchor,
+            source_refs=source_refs,
             result=result,
         )
 
@@ -464,11 +726,34 @@ def sync_landscape_artifact(
             description = gap.get("description") or gap.get("suggestion")
             if not isinstance(description, str) or not description.strip():
                 continue
+            gap_id = str(gap.get("id") or "coverage_gap")
+            target = {"kind": "question", "id": target_qid}
+            action = f"Close coverage gap {gap_id}: {description.strip()}"
+            source_refs = gap.get("evidence_refs")
+            anchor = {
+                "kind": "landscape_gap",
+                "id": gap.get("id"),
+                **research_obligation_anchor(
+                    source_kind="landscape_gap",
+                    obligation_type="workflow",
+                    action_type="close_coverage_gap",
+                    target=target,
+                    auto_closeable=True,
+                    blocking=False,
+                    budget_class="coverage",
+                    source="landscape",
+                    extra={"coverage_gap_id": gap_id},
+                ),
+            }
             _defer_obligation(
+                target=target,
                 target_qid=target_qid,
                 content=description.strip(),
                 diagnostic_kind="focus_weakness",
-                anchor={"kind": "landscape_gap", "id": gap.get("id")},
+                action_type="close_coverage_gap",
+                action=action,
+                anchor=anchor,
+                source_refs=source_refs,
                 result=result,
             )
 
@@ -528,6 +813,7 @@ def _relation_claim_refs(
     relation: JsonDict,
     *,
     package_ref_value_types: dict[str, str] | None = None,
+    new_claim_refs: dict[str, str] | None = None,
 ) -> tuple[
     list[str],
     tuple[tuple[str, str], ...],
@@ -535,11 +821,21 @@ def _relation_claim_refs(
     str | None,
 ]:
     raw_refs = relation.get("claim_refs", relation.get("claims"))
+    source_package_refs = _package_ref_source_refs(relation)
     if raw_refs is None:
-        raw_refs = _package_ref_source_refs(relation)
+        raw_refs = source_package_refs
     if not isinstance(raw_refs, list):
         return [], (), (), "claim_refs missing or not a list"
-    refs = [str(item).strip() for item in raw_refs if str(item).strip()]
+    raw_refs = _repair_partial_claim_refs_from_source_package_refs(
+        raw_refs,
+        source_package_refs=source_package_refs,
+    )
+    candidate_refs = new_claim_refs or {}
+    refs = [
+        candidate_refs.get(str(item).strip(), str(item).strip())
+        for item in raw_refs
+        if str(item).strip()
+    ]
     value_types = package_ref_value_types or {}
     for ref in refs:
         value_type = value_types.get(ref)
@@ -550,9 +846,29 @@ def _relation_claim_refs(
     tokens, error = split_csv_refs(",".join(refs))
     if error is not None:
         return [], (), (), str(error)
-    sibling = tuple((item, "") for item in tokens.local)
+    new_claim_bindings = set(candidate_refs.values())
+    sibling = tuple((item, "") for item in tokens.local if item not in new_claim_bindings)
     foreign = tuple((item.module, item.symbol, item.alias) for item in tokens.foreign_imports)
     return tokens.rendered, sibling, foreign, None
+
+
+def _repair_partial_claim_refs_from_source_package_refs(
+    raw_refs: list[object],
+    *,
+    source_package_refs: list[str],
+) -> list[object]:
+    # Fallback for partial LLM output; prompts still require complete relation endpoints.
+    if len([ref for ref in raw_refs if str(ref).strip()]) >= 2:
+        return raw_refs
+    refs: list[object] = []
+    seen: set[str] = set()
+    for ref in [*source_package_refs, *raw_refs]:
+        key = str(ref).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        refs.append(ref)
+    return refs
 
 
 def _package_ref_source_refs(relation: JsonDict) -> list[str]:
@@ -570,9 +886,85 @@ def _package_ref_source_refs(relation: JsonDict) -> list[str]:
 
 
 def _candidate_relation_pattern(relation_type: str, claim_refs: list[str]) -> str | None:
-    if relation_type == "opposes" and len(claim_refs) == 2:
+    if relation_type in {"opposes", "conflicts"} and len(claim_refs) == 2:
         return "contradict"
     return None
+
+
+def _relation_type(relation: JsonDict) -> str:
+    raw = relation.get("relation_type") or relation.get("type") or "relation"
+    return str(raw)
+
+
+def _new_claim_text(claim: JsonDict) -> str | None:
+    for key in ("claim", "text", "content"):
+        value = claim.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _sync_assessment_new_claims(
+    pkg: ResearchPackage,
+    claims: object,
+    *,
+    focus_id: str,
+    result: ResearchSyncResult,
+) -> dict[str, str]:
+    if not isinstance(claims, list):
+        return {}
+    bindings: dict[str, str] = {}
+    target = _authored_init_path(pkg)
+    existing_by_text = {
+        _normalized_claim_text(claim.text): claim.binding for claim in _authored_claims(target)
+    }
+    for claim_payload in claims:
+        if not isinstance(claim_payload, dict):
+            continue
+        claim_text = _new_claim_text(claim_payload)
+        claim_id = claim_payload.get("id")
+        if not isinstance(claim_id, str) or not claim_id.strip() or claim_text is None:
+            result.claims_skipped.append(str(claim_id or claim_payload or "claim"))
+            continue
+        existing_binding = existing_by_text.get(_normalized_claim_text(claim_text))
+        if existing_binding is not None:
+            result.claims_skipped.append(f"{claim_id} -> {existing_binding}")
+            bindings[claim_id] = existing_binding
+            continue
+        binding = _binding(
+            "research_claim",
+            {
+                "focus": focus_id,
+                "id": claim_id,
+                "claim": claim_text,
+            },
+        )
+        metadata = _research_metadata(
+            "research_claim",
+            {
+                "focus": focus_id,
+                "source_claim_id": claim_id,
+                "category": claim_payload.get("category"),
+                "answers_question": claim_payload.get("answers_question") or focus_id,
+                "status": claim_payload.get("status") or "candidate",
+                "rationale": claim_payload.get("rationale"),
+                "source_refs": claim_payload.get("source_refs", []),
+            },
+        )
+        code = f"{binding} = claim({claim_text!r}, title={claim_id!r}, metadata={metadata!r})"
+        _append_statement_once(
+            pkg,
+            binding=binding,
+            generated_code=code,
+            required_imports=("claim",),
+            result_list=result.claims_written,
+            skip_list=result.claims_skipped,
+            export=True,
+            source_writes=result.writes_source,
+        )
+        bindings[claim_id] = binding
+        existing_by_text.setdefault(_normalized_claim_text(claim_text), binding)
+    return bindings
 
 
 def _sync_assessment_review_note(
@@ -641,11 +1033,13 @@ def _sync_assessment_candidate_relation(
     *,
     focus_id: str,
     package_ref_value_types: dict[str, str],
+    new_claim_refs: dict[str, str],
     result: ResearchSyncResult,
 ) -> None:
     claim_refs, sibling_imports, foreign_imports, skip_reason = _relation_claim_refs(
         relation,
         package_ref_value_types=package_ref_value_types,
+        new_claim_refs=new_claim_refs,
     )
     if len(claim_refs) < 2:
         label = str(relation.get("id") or relation.get("claim") or "relation")
@@ -653,7 +1047,7 @@ def _sync_assessment_candidate_relation(
             label = f"{label}: {skip_reason}"
         result.candidate_relations_skipped.append(label)
         return
-    relation_type = str(relation.get("type") or "relation")
+    relation_type = _relation_type(relation)
     binding = _binding(
         "candidate_relation",
         {
@@ -665,22 +1059,40 @@ def _sync_assessment_candidate_relation(
     )
     pattern = _candidate_relation_pattern(relation_type, claim_refs)
     metadata = _research_metadata(
-        "assessment_candidate_relation",
+        "candidate_relation",
         {
             "focus": focus_id,
+            "scope_question": relation.get("scope_question") or focus_id,
             "relation_type": relation_type,
+            "strength": relation.get("strength"),
             "epistemic_status": relation.get("epistemic_status"),
+            "system": relation.get("system"),
+            "condition": relation.get("condition"),
+            "method": relation.get("method"),
+            "observable": relation.get("observable"),
+            "certainty": relation.get("certainty"),
+            "scope_note": relation.get("scope_note"),
             "source_refs": relation.get("source_refs", []),
         },
     )
+    relation_record: JsonDict = {
+        "id": binding,
+        "claims": claim_refs,
+        "pattern": pattern,
+        "metadata": metadata,
+    }
     kwargs = [f"claims=[{', '.join(claim_refs)}]"]
     if pattern is not None:
         kwargs.append(f"pattern={pattern!r}")
     rationale = relation.get("rationale")
     if isinstance(rationale, str) and rationale.strip():
-        kwargs.append(f"rationale={rationale.strip()!r}")
+        rationale_text = rationale.strip()
+        relation_record["rationale"] = rationale_text
+        kwargs.append(f"rationale={rationale_text!r}")
     kwargs.append(f"metadata={metadata!r}")
     code = f"{binding} = candidate_relation({', '.join(kwargs)})"
+    target = _authored_init_path(pkg)
+    backed_before = _binding_exists(target, binding)
     _append_statement_once(
         pkg,
         binding=binding,
@@ -692,6 +1104,8 @@ def _sync_assessment_candidate_relation(
         foreign_imports=foreign_imports,
         source_writes=result.writes_source,
     )
+    if backed_before or _binding_exists(target, binding):
+        result.evidence_matrix_rows.extend(project_evidence_matrix_rows([relation_record]))
 
 
 def _sync_assessment_relations(
@@ -700,6 +1114,7 @@ def _sync_assessment_relations(
     *,
     focus_id: str,
     package_ref_value_types: dict[str, str],
+    new_claim_refs: dict[str, str],
     result: ResearchSyncResult,
 ) -> None:
     if not isinstance(relations, list):
@@ -713,6 +1128,7 @@ def _sync_assessment_relations(
             relation,
             focus_id=focus_id,
             package_ref_value_types=package_ref_value_types,
+            new_claim_refs=new_claim_refs,
             result=result,
         )
 
@@ -729,32 +1145,57 @@ def _sync_assessment_obligations(
     for obligation in obligations:
         if not isinstance(obligation, dict):
             continue
-        content = obligation.get("content")
-        if not isinstance(content, str) or not content.strip():
-            continue
         raw_kind = str(obligation.get("kind") or "other")
-        diagnostic_kind = "support_weak" if raw_kind == "needs_more_evidence" else "other"
-        if not _is_actionable_obligation(obligation):
+        target = _obligation_target(obligation, default_qid=focus_id)
+        target_qid = _target_qid(target)
+        action_type = _obligation_action_type(obligation, raw_kind=raw_kind)
+        diagnostic_kind = _diagnostic_kind_for_obligation(
+            raw_kind=raw_kind,
+            action_type=action_type,
+        )
+        action = _obligation_action(obligation, fallback=_clean_text(obligation.get("content")))
+        if action is None:
+            continue
+        content = _obligation_content(obligation, action_type=action_type, action=action)
+        source_refs = obligation.get("source_refs")
+        actionable = _is_actionable_obligation(obligation)
+        anchor = {
+            "kind": "assessment_obligation",
+            "source_refs": source_refs,
+            **research_obligation_anchor(
+                source_kind="assessment_obligation",
+                obligation_type="workflow" if actionable else "future_research",
+                action_type=action_type,
+                target=target,
+                auto_closeable=actionable,
+                blocking=actionable,
+                budget_class=_obligation_budget_class(action_type),
+                source="assessment",
+            ),
+        }
+        if not actionable:
             _defer_obligation(
-                target_qid=focus_id,
-                content=content.strip(),
+                target=target,
+                target_qid=target_qid,
+                content=content,
                 diagnostic_kind=diagnostic_kind,
-                anchor={
-                    "kind": "assessment_obligation",
-                    "source_refs": obligation.get("source_refs"),
-                },
+                action_type=action_type,
+                action=action,
+                anchor=anchor,
+                source_refs=source_refs,
                 result=result,
             )
             continue
         _add_obligation_once(
             pkg,
-            target_qid=focus_id,
-            content=content.strip(),
+            target=target,
+            target_qid=target_qid,
+            content=content,
             diagnostic_kind=diagnostic_kind,
-            anchor={
-                "kind": "assessment_obligation",
-                "source_refs": obligation.get("source_refs"),
-            },
+            action_type=action_type,
+            action=action,
+            anchor=anchor,
+            source_refs=source_refs,
             result=result,
         )
 
@@ -777,11 +1218,18 @@ def sync_assessment_artifact(
     package_ref_value_types = _assessment_package_ref_value_types(assessment)
 
     _sync_assessment_review_note(pkg, assessment, focus_id=focus_id, result=result)
+    new_claim_refs = _sync_assessment_new_claims(
+        pkg,
+        assessment.get("new_claims"),
+        focus_id=focus_id,
+        result=result,
+    )
     _sync_assessment_relations(
         pkg,
         assessment.get("relations"),
         focus_id=focus_id,
         package_ref_value_types=package_ref_value_types,
+        new_claim_refs=new_claim_refs,
         result=result,
     )
     _sync_assessment_obligations(
@@ -790,6 +1238,83 @@ def sync_assessment_artifact(
         focus_id=focus_id,
         result=result,
     )
+    return result
+
+
+def sync_research_obligations(
+    pkg: ResearchPackage,
+    obligations: object,
+    *,
+    dry_run: bool = False,
+) -> ResearchSyncResult:
+    """Record normalized research obligations into Gaia inquiry state."""
+    result = ResearchSyncResult(
+        dry_run=dry_run,
+        source_writes_enabled=False,
+    )
+    if not isinstance(obligations, list):
+        return result
+    for obligation in obligations:
+        if not isinstance(obligation, dict):
+            continue
+        target = _obligation_target(
+            obligation,
+            default_qid=str(obligation.get("target_qid") or "research_obligation"),
+        )
+        target_qid = str(obligation.get("target_qid") or _target_qid(target))
+        action_type = _clean_text(obligation.get("action_type")) or "research_action"
+        action = _clean_text(obligation.get("action"))
+        if action is None:
+            continue
+        content = _clean_text(obligation.get("content")) or action
+        diagnostic_kind = _diagnostic_kind_for_obligation(
+            raw_kind=str(obligation.get("diagnostic_kind") or obligation.get("kind") or "other"),
+            action_type=action_type,
+        )
+        source_refs = obligation.get("source_refs")
+        raw_anchor = obligation.get("anchor")
+        anchor = dict(raw_anchor) if isinstance(raw_anchor, dict) else {}
+        if "gaia_research" not in anchor:
+            anchor = {
+                **anchor,
+                **research_obligation_anchor(
+                    source_kind=str(anchor.get("kind") or "research_obligation"),
+                    obligation_type="workflow"
+                    if _is_actionable_obligation(obligation)
+                    else "future_research",
+                    action_type=action_type,
+                    target=target,
+                    auto_closeable=_is_actionable_obligation(obligation),
+                    blocking=_is_actionable_obligation(obligation),
+                    budget_class=_obligation_budget_class(action_type),
+                    source="research_obligation",
+                ),
+            }
+        if _is_actionable_obligation(obligation):
+            _add_obligation_once(
+                pkg,
+                target=target,
+                target_qid=target_qid,
+                content=content,
+                diagnostic_kind=diagnostic_kind,
+                action_type=action_type,
+                action=action,
+                anchor=anchor,
+                source_refs=source_refs,
+                result=result,
+            )
+            continue
+        _defer_obligation(
+            target=target,
+            target_qid=target_qid,
+            content=content,
+            diagnostic_kind=diagnostic_kind,
+            action_type=action_type,
+            action=action,
+            anchor=anchor,
+            source_refs=source_refs,
+            result=result,
+        )
     return result
 
 
@@ -931,20 +1456,29 @@ def _sync_proposal_obligations(
     for obligation in obligations:
         if not isinstance(obligation, dict):
             continue
-        content = obligation.get("content")
-        if not isinstance(content, str) or not content.strip():
-            continue
         raw_kind = str(obligation.get("kind") or "other")
         diagnostic_kind = "support_weak" if raw_kind == "needs_more_evidence" else "other"
+        target = _obligation_target(obligation, default_qid=target_qid)
+        resolved_target_qid = _target_qid(target)
+        action_type = _obligation_action_type(obligation, raw_kind=raw_kind)
+        action = _obligation_action(obligation, fallback=_clean_text(obligation.get("content")))
+        if action is None:
+            continue
+        content = _obligation_content(obligation, action_type=action_type, action=action)
+        source_refs = obligation.get("source_refs")
         _add_obligation_once(
             pkg,
-            target_qid=target_qid,
-            content=content.strip(),
+            target=target,
+            target_qid=resolved_target_qid,
+            content=content,
             diagnostic_kind=diagnostic_kind,
+            action_type=action_type,
+            action=action,
             anchor={
                 "kind": "proposal_obligation",
-                "source_refs": obligation.get("source_refs"),
+                "source_refs": source_refs,
             },
+            source_refs=source_refs,
             result=result,
         )
 
@@ -1048,4 +1582,5 @@ __all__ = [
     "sync_landscape_artifact",
     "sync_materialization",
     "sync_proposal_artifact",
+    "sync_research_obligations",
 ]

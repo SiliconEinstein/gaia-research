@@ -303,6 +303,9 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
             ),
         },
         "output_required_fields": {
+            "new_claims": (
+                "list[NewClaim]; ordinary Gaia claim(...) objects to author; use [] when none"
+            ),
             "relations": "list[Relation]",
             "candidate_obligations": "list[CandidateObligation]",
         },
@@ -313,6 +316,20 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
                 "legacy optional object; do not produce it in the fixed workflow unless "
                 "a caller explicitly asks for a standalone assessment artifact"
             ),
+        },
+        "new_claim_fields": {
+            "id": (
+                "stable snake_case local id. This id can be referenced by relation.claim_refs "
+                "and will be authored as a normal Gaia claim(...) object when synced."
+            ),
+            "claim": (
+                "atomic candidate answer or scientific claim, not article prose; write "
+                "Chinese when language is zh"
+            ),
+            "category": "optional source/category marker such as answer_candidate or synthesis",
+            "rationale": "why this candidate claim is worth authoring",
+            "answers_question": "optional focus/question id this candidate answers",
+            "source_refs": "non-empty refs grounded in the evidence packet",
         },
         "relation_fields": {
             "type": sorted(VALID_RELATIONS),
@@ -350,10 +367,12 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
             ),
             "claim_refs": (
                 "optional list of concrete package claim refs used only when this relation "
-                "should be scaffolded as candidate_relation(...). Use local bindings or "
-                "foreign Gaia QIDs such as items[*].package_ref.ref; omit when the "
-                "relation is only a prose assessment. Only use package_ref.ref when "
-                "package_ref.value_type is 'claim'."
+                "should be scaffolded as candidate_relation(...). Use new_claims[*].id "
+                "for newly authored local candidates, or foreign Gaia pulled-claim QIDs "
+                "such as lkm:<package>::<label> from items[*].package_ref.ref or resolved "
+                "anchors. Omit when the relation is only a prose assessment. Only use "
+                "package_ref.ref when package_ref.value_type is 'claim'. Never use dotted "
+                "refs such as import_name.symbol."
             ),
         },
         "limitation_fields": {
@@ -369,7 +388,18 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
         },
         "candidate_obligation_fields": {
             "kind": "needs_more_evidence, needs_method_check, needs_replication, or other",
-            "content": "specific missing check that affects this focus",
+            "target": (
+                "object identifying what the next action is about: "
+                "{kind: question|claim|relation, id/ref: string}. Use the focus question "
+                "when the gap is broad, a claim ref when evidence for one claim is missing, "
+                "or a relation ref when the gap concerns a candidate_relation."
+            ),
+            "action_type": (
+                "short snake_case verb phrase such as search_more_evidence, "
+                "check_method_scope, resolve_contradiction, or assess_claim"
+            ),
+            "action": "concrete next action to take in the research workflow",
+            "content": "brief note explaining why this action is needed",
             "source_refs": "optional grounding refs",
             "actionable": (
                 "optional bool; set true only for a near-term blocking task that should "
@@ -402,12 +432,34 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
             (
                 "When a relation genuinely compares or links concrete package claims, "
                 "set claim_refs to those package refs. Do not invent refs; use only "
-                "local package bindings or package_ref.ref values visible in "
-                "the evidence packet whose package_ref.value_type is 'claim'."
+                "new_claims[*].id, local package bindings, or package_ref.ref values "
+                "visible in the evidence packet whose package_ref.value_type is 'claim'. "
+                "Foreign Gaia refs must use lkm:<package>::<label>, not dotted import refs."
+            ),
+            (
+                "Prefer dense grounded relation capture over a sparse summary: include "
+                "existing-existing relations between pulled package claims and existing-new "
+                "relations between pulled package claims and new_claims when the packet "
+                "supports them. Do not add weak rows only to increase count."
             ),
             "When evidence is insufficient, emit obligations instead of overclaiming.",
         ],
         "example": {
+            "new_claims": [
+                {
+                    "id": "aspree_no_routine_primary_prevention",
+                    "claim": (
+                        "ASPREE does not support routine aspirin primary prevention "
+                        "in healthy adults aged 70 or older."
+                    ),
+                    "category": "answer_candidate",
+                    "rationale": (
+                        "The cited claim reports no cardiovascular benefit and more bleeding."
+                    ),
+                    "answers_question": "elderly_primary_prevention",
+                    "source_refs": [{"kind": "package_ref", "id": "lkm:aspree_pkg::net_benefit"}],
+                }
+            ],
             "relations": [
                 {
                     "type": "opposes",
@@ -422,6 +474,10 @@ def assess_contract(*, language: str = "zh") -> dict[str, Any]:
                     "epistemic_status": "candidate",
                     "promotion_hint": "none",
                     "source_refs": [{"kind": "variable", "id": "aspree_result"}],
+                    "claim_refs": [
+                        "lkm:aspree_pkg::net_benefit",
+                        "aspree_no_routine_primary_prevention",
+                    ],
                 }
             ],
             "limitations": ["需要逐篇核对原始试验终点定义。"],
@@ -479,6 +535,15 @@ def propose_contract(*, language: str = "zh") -> dict[str, Any]:
         },
         "candidate_obligation_fields": {
             "kind": "needs_more_evidence, needs_method_check, needs_replication, or other",
+            "target": (
+                "object identifying what the next action is about: "
+                "{kind: question|claim|relation, id/ref: string}"
+            ),
+            "action_type": (
+                "short snake_case verb phrase such as search_more_evidence, "
+                "check_method_scope, resolve_contradiction, or assess_claim"
+            ),
+            "action": "concrete next action to take in the research workflow",
             "content": "what must be checked before the proposal can be assessed or promoted",
             "source_refs": "optional grounding refs",
         },
@@ -526,6 +591,85 @@ def propose_contract(*, language: str = "zh") -> dict[str, Any]:
     }
 
 
+def obligation_policy_contract(*, language: str = "zh") -> dict[str, Any]:
+    """Return the JSON contract for adaptive obligation scheduling policy."""
+    return {
+        "contract": "gaia.research.obligation_policy",
+        "schema_version": 1,
+        "language": language,
+        "purpose": (
+            "Score existing research obligations for the next bounded scheduler step. "
+            "This is advice only: the deterministic scheduler validates that selected "
+            "obligations are supported, auto-closeable, in budget, and grounded."
+        ),
+        "input": {
+            "topic": "The user's review or evidence-assessment topic.",
+            "graph_summary": (
+                "Compact summary of current focuses, assessed focuses, relation counts, "
+                "claim counts, and coverage gaps."
+            ),
+            "obligations": (
+                "Existing open and deferred obligations. Score only these obligations; "
+                "do not invent new targets or new obligations."
+            ),
+            "budget": "Remaining obligation iterations and per-action guardrails.",
+            "previous_executions": "Actions already taken in this run.",
+        },
+        "output_required_fields": {
+            "rankings": "list[Ranking] ordered or scored by expected research value",
+        },
+        "ranking_fields": {
+            "target_qid": "target_qid from one input obligation",
+            "action_type": (
+                "supported executable action type from the input obligation; do not invent "
+                "new action types"
+            ),
+            "score": "number from 0.0 to 1.0; higher means execute earlier",
+            "reason": "brief reason this obligation should be prioritized now",
+            "report_impact": "optional high, medium, low",
+            "uncertainty_reduction": "optional high, medium, low",
+            "coverage_gain": "optional high, medium, low",
+            "cost": "optional high, medium, low",
+        },
+        "forbidden_outputs": [
+            "Do not create new obligations.",
+            "Do not choose future_research, manual, or unsupported actions.",
+            "Do not claim a scientific conclusion; only score next workflow actions.",
+            "Do not output Markdown or prose outside the JSON object.",
+        ],
+        "analysis_guidance": [
+            (
+                "Prioritize obligations that most affect the eventual review conclusion, "
+                "reduce uncertainty around central competing claims, or unblock later "
+                "assessment."
+            ),
+            (
+                "A lower-level action can outrank assess_focus if it is a stronger blocker "
+                "for interpreting evidence, such as resolving model mismatch or coverage gaps."
+            ),
+            (
+                "When several obligations have similar value, prefer lower cost and less "
+                "duplicate search."
+            ),
+            "Use target_qid and action_type exactly as provided in the input obligation.",
+        ],
+        "example": {
+            "rankings": [
+                {
+                    "target_qid": "research_coverage",
+                    "action_type": "close_coverage_gap",
+                    "score": 0.91,
+                    "reason": "Experimental coverage affects whether the review can discuss scope.",
+                    "report_impact": "high",
+                    "uncertainty_reduction": "medium",
+                    "coverage_gain": "high",
+                    "cost": "medium",
+                }
+            ]
+        },
+    }
+
+
 def research_contract(kind: str, *, language: str = "zh") -> dict[str, Any]:
     """Return one named research contract."""
     normalized = kind.strip().lower()
@@ -537,10 +681,13 @@ def research_contract(kind: str, *, language: str = "zh") -> dict[str, Any]:
         return focus_contract(language=language)
     if normalized in {"assess", "assessment", "assessment_analysis"}:
         return assess_contract(language=language)
+    if normalized in {"obligation_policy", "obligation-policy", "policy", "scheduler_policy"}:
+        return obligation_policy_contract(language=language)
     if normalized in {"propose", "proposal", "proposal_analysis"}:
         return propose_contract(language=language)
     raise ResearchContractError(
-        "supported contracts are: query_plan, field_map, focus, assess, propose"
+        "supported contracts are: query_plan, field_map, focus, assess, "
+        "obligation_policy, propose"
     )
 
 
@@ -550,6 +697,7 @@ __all__ = [
     "assess_contract",
     "field_map_contract",
     "focus_contract",
+    "obligation_policy_contract",
     "propose_contract",
     "query_plan_contract",
     "research_contract",

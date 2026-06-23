@@ -321,6 +321,85 @@ def test_assessment_from_analysis_preserves_typed_relations_and_review() -> None
     assert validate_assessment_grounding(artifact) is artifact
 
 
+def test_assessment_from_analysis_accepts_new_claims_and_refs_them_locally() -> None:
+    selected_packet = {
+        "items": [
+            {
+                "item_id": "claim_drift",
+                "kind": "package",
+                "id": "claim_drift",
+                "content": "Finite-size drift is consistent with weak first-order behavior.",
+                "package_ref": {"ref": "lkm:paper_pkg::claim_drift", "value_type": "claim"},
+            }
+        ],
+        "paper_leads": [],
+    }
+
+    artifact = build_assessment_from_analysis(
+        focus={"kind": "focus", "id": "dqc-order"},
+        landscapes=[],
+        evidence_packet=selected_packet,
+        analysis={
+            "new_claims": [
+                {
+                    "id": "dqc_weak_first_order",
+                    "claim": "Deconfined criticality is weakly first-order in the studied regimes.",
+                    "category": "answer_candidate",
+                    "rationale": "Finite-size drift motivates this candidate answer.",
+                    "answers_question": "dqc-order",
+                    "source_refs": [{"kind": "package_ref", "id": "lkm:paper_pkg::claim_drift"}],
+                }
+            ],
+            "relations": [
+                _relation(
+                    type="supports",
+                    claim="Finite-size drift supports the weak first-order candidate.",
+                    claim_refs=["lkm:paper_pkg::claim_drift", "dqc_weak_first_order"],
+                    source_refs=[{"kind": "package_ref", "id": "lkm:paper_pkg::claim_drift"}],
+                )
+            ],
+            "candidate_obligations": [],
+        },
+    )
+
+    assert artifact["new_claims"] == [
+        {
+            "id": "dqc_weak_first_order",
+            "claim": "Deconfined criticality is weakly first-order in the studied regimes.",
+            "category": "answer_candidate",
+            "rationale": "Finite-size drift motivates this candidate answer.",
+            "answers_question": "dqc-order",
+            "source_refs": [{"kind": "package_ref", "id": "lkm:paper_pkg::claim_drift"}],
+        }
+    ]
+    assert artifact["relations"][0]["claim_refs"] == [
+        "lkm:paper_pkg::claim_drift",
+        "dqc_weak_first_order",
+    ]
+    assert validate_assessment_artifact(artifact) is artifact
+    assert validate_assessment_grounding(artifact) is artifact
+
+
+def test_assessment_grounding_rejects_ungrounded_new_claim_source_refs() -> None:
+    with pytest.raises(AssessmentSchemaError, match=r"new_claims.*source_refs"):
+        build_assessment_from_analysis(
+            focus={"kind": "focus", "id": "dqc-order"},
+            landscapes=[],
+            evidence_packet={"items": [], "paper_leads": []},
+            analysis={
+                "new_claims": [
+                    {
+                        "id": "dqc_weak_first_order",
+                        "claim": "Deconfined criticality is weakly first-order.",
+                        "source_refs": [{"kind": "package_ref", "id": "missing"}],
+                    }
+                ],
+                "relations": [_relation(source_refs=[{"kind": "focus", "id": "dqc-order"}])],
+                "candidate_obligations": [],
+            },
+        )
+
+
 def test_assessment_grounding_rejects_non_claim_package_claim_refs() -> None:
     selected_packet = {
         "items": [
@@ -458,6 +537,27 @@ def test_assessment_from_analysis_can_repair_ungrounded_llm_relations() -> None:
     assert [relation["claim"] for relation in artifact["relations"]] == [
         "Grounded relation is preserved."
     ]
+    assert validate_assessment_grounding(artifact) is artifact
+
+
+def test_assessment_from_analysis_repairs_relation_type_used_as_promotion_hint() -> None:
+    artifact = build_assessment_from_analysis(
+        focus={"kind": "focus", "id": "elderly_net_benefit"},
+        landscapes=[_landscape()],
+        analysis={
+            "relations": [
+                _relation(
+                    type="supports",
+                    promotion_hint="supports",
+                    source_refs=[{"kind": "variable", "id": "aspree_variable"}],
+                )
+            ],
+            "candidate_obligations": [],
+        },
+        repair_grounding=True,
+    )
+
+    assert artifact["relations"][0]["promotion_hint"] == "none"
     assert validate_assessment_grounding(artifact) is artifact
 
 

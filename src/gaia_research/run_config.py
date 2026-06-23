@@ -39,9 +39,9 @@ class EvidenceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     selection_mode: EvidenceSelectionMode = "fast"
-    max_items: int = 12
-    max_papers: int = 6
-    max_chains: int = 6
+    max_items: int = 20
+    max_papers: int = 20
+    max_chains: int = 20
 
 
 class ReportConfig(BaseModel):
@@ -50,6 +50,14 @@ class ReportConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     section_concurrency: int = 4
+
+
+class SchedulerConfig(BaseModel):
+    """Obligation-loop budget settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    obligation_iterations: int = 0
 
 
 class LLMConfig(BaseModel):
@@ -76,6 +84,7 @@ class ResearchRunConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     focus: FocusConfig = Field(default_factory=FocusConfig)
     evidence: EvidenceConfig = Field(default_factory=EvidenceConfig)
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     report: ReportConfig = Field(default_factory=ReportConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
 
@@ -88,38 +97,26 @@ def profile_defaults(profile: str) -> ResearchRunConfig:
             llm=LLMConfig(provider="litellm"),
             search=SearchConfig(limit=10),
             focus=FocusConfig(count=1),
-            evidence=EvidenceConfig(
-                selection_mode="fast",
-                max_items=12,
-                max_papers=6,
-                max_chains=6,
-            ),
+            evidence=EvidenceConfig(selection_mode="fast"),
+            scheduler=SchedulerConfig(obligation_iterations=1),
         )
     if profile == "broad":
         return ResearchRunConfig(
             profile="broad",
             llm=LLMConfig(provider="litellm"),
-            search=SearchConfig(limit=20),
-            focus=FocusConfig(count=3),
-            evidence=EvidenceConfig(
-                selection_mode="fast",
-                max_items=24,
-                max_papers=10,
-                max_chains=10,
-            ),
+            search=SearchConfig(limit=10),
+            focus=FocusConfig(count=1),
+            evidence=EvidenceConfig(selection_mode="fast"),
+            scheduler=SchedulerConfig(obligation_iterations=5),
         )
     if profile == "deep":
         return ResearchRunConfig(
             profile="deep",
             llm=LLMConfig(provider="litellm"),
-            search=SearchConfig(limit=20),
-            focus=FocusConfig(count=5),
-            evidence=EvidenceConfig(
-                selection_mode="review",
-                max_items=48,
-                max_papers=20,
-                max_chains=20,
-            ),
+            search=SearchConfig(limit=10),
+            focus=FocusConfig(count=1),
+            evidence=EvidenceConfig(selection_mode="fast"),
+            scheduler=SchedulerConfig(obligation_iterations=10),
         )
     msg = "profile must be one of: fast, broad, deep"
     raise ValueError(msg)
