@@ -159,7 +159,7 @@ def _policy_entry_matches(
     entry: dict[str, Any],
     obligation: dict[str, Any],
 ) -> bool:
-    action_type = entry.get("action_type") or entry.get("mapped_executable_action")
+    action_type = entry.get("action_type")
     if not isinstance(action_type, str) or action_type.strip() != _action_type(obligation):
         return False
 
@@ -182,7 +182,6 @@ def _policy_selection_payload(entry: dict[str, Any]) -> dict[str, Any]:
         "target_qid",
         "target_id",
         "action_type",
-        "mapped_executable_action",
         "score",
         "reason",
         "report_impact",

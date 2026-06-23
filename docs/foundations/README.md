@@ -17,6 +17,12 @@ Current foundation documents:
 - [Research Prompts](research-prompts.md): ownership, loading, and iteration
   policy for `gaia research run` LLM prompts.
 
+User-facing inspection commands:
+
+- `gaia research visualize <pkg> --run-id <run-id> --out visualize.html`
+  renders a static HTML view with one tab for persisted graph/package assets and
+  one tab for execution trace.
+
 Current milestone:
 
 ```text

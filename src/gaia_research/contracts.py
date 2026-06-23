@@ -19,6 +19,7 @@ from gaia_research.proposal import (
     VALID_PROPOSAL_PRIORITIES,
     VALID_PROPOSAL_STATUSES,
 )
+from gaia_research.scheduler import SUPPORTED_OBLIGATION_ACTIONS
 
 CORE_PUBLIC_SURFACES: tuple[str, ...] = (
     "gaia.lkm.client",
@@ -593,6 +594,7 @@ def propose_contract(*, language: str = "zh") -> dict[str, Any]:
 
 def obligation_policy_contract(*, language: str = "zh") -> dict[str, Any]:
     """Return the JSON contract for adaptive obligation scheduling policy."""
+    supported_action_types = list(SUPPORTED_OBLIGATION_ACTIONS)
     return {
         "contract": "gaia.research.obligation_policy",
         "schema_version": 1,
@@ -615,14 +617,15 @@ def obligation_policy_contract(*, language: str = "zh") -> dict[str, Any]:
             "budget": "Remaining obligation iterations and per-action guardrails.",
             "previous_executions": "Actions already taken in this run.",
         },
+        "supported_action_types": supported_action_types,
         "output_required_fields": {
             "rankings": "list[Ranking] ordered or scored by expected research value",
         },
         "ranking_fields": {
             "target_qid": "target_qid from one input obligation",
             "action_type": (
-                "supported executable action type from the input obligation; do not invent "
-                "new action types"
+                "must be one of supported_action_types and must equal the input "
+                "obligation action_type; do not invent aliases or mapped action fields"
             ),
             "score": "number from 0.0 to 1.0; higher means execute earlier",
             "reason": "brief reason this obligation should be prioritized now",
@@ -634,6 +637,8 @@ def obligation_policy_contract(*, language: str = "zh") -> dict[str, Any]:
         "forbidden_outputs": [
             "Do not create new obligations.",
             "Do not choose future_research, manual, or unsupported actions.",
+            "Do not output non-executable action aliases.",
+            "Do not output mapped executable action fields.",
             "Do not claim a scientific conclusion; only score next workflow actions.",
             "Do not output Markdown or prose outside the JSON object.",
         ],
@@ -651,7 +656,10 @@ def obligation_policy_contract(*, language: str = "zh") -> dict[str, Any]:
                 "When several obligations have similar value, prefer lower cost and less "
                 "duplicate search."
             ),
-            "Use target_qid and action_type exactly as provided in the input obligation.",
+            (
+                "Use target_qid and action_type exactly as provided in the input obligation. "
+                "Skip obligations whose action_type is not in supported_action_types."
+            ),
         ],
         "example": {
             "rankings": [

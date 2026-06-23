@@ -169,6 +169,67 @@ def test_schedule_ignores_policy_for_missing_candidate() -> None:
     assert schedule["policy_selection"] is None
 
 
+def test_schedule_ignores_policy_with_non_executable_action_type() -> None:
+    ready_focus = _workflow_obligation("assess_focus", target_id="ready_focus")
+    coverage = _workflow_obligation(
+        "close_coverage_gap",
+        target_id="research_coverage",
+        blocking=False,
+    )
+
+    schedule = plan_obligation_schedule(
+        open_obligations=[ready_focus, coverage],
+        deferred_obligations=[],
+        budget=ResearchRunBudget(obligation_iterations=1),
+        policy={
+            "rankings": [
+                {
+                    "target_qid": "ready_focus",
+                    "action_type": "review_focus",
+                    "mapped_executable_action": "assess_focus",
+                    "score": 1.0,
+                    "reason": "Legacy review action must not steer the new scheduler.",
+                }
+            ]
+        },
+    )
+
+    assert schedule["decision"] == "execute"
+    assert schedule["selected_action_type"] == "assess_focus"
+    assert schedule["selected_obligation"] == ready_focus
+    assert schedule["policy_selection"] is None
+
+
+def test_schedule_ignores_policy_mapped_executable_action_field() -> None:
+    ready_focus = _workflow_obligation("assess_focus", target_id="ready_focus")
+    coverage = _workflow_obligation(
+        "close_coverage_gap",
+        target_id="research_coverage",
+        blocking=False,
+    )
+
+    schedule = plan_obligation_schedule(
+        open_obligations=[coverage, ready_focus],
+        deferred_obligations=[],
+        budget=ResearchRunBudget(obligation_iterations=1),
+        policy={
+            "rankings": [
+                {
+                    "target_qid": "research_coverage",
+                    "mapped_executable_action": "close_coverage_gap",
+                    "score": 1.0,
+                    "reason": "Mapped action is no longer part of the policy contract.",
+                }
+            ]
+        },
+    )
+
+    assert schedule["decision"] == "execute"
+    assert schedule["selected_action_type"] == "assess_focus"
+    assert schedule["selected_obligation"] == ready_focus
+    assert schedule["policy_selection"] is None
+
+
 def test_schedule_ignores_future_research_and_unsupported_actions() -> None:
     future_research = _workflow_obligation(
         "check_method_scope",

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any, cast
@@ -936,6 +939,263 @@ def _safe_focus_suffix(value: str) -> str:
     return safe[:80] or "focus"
 
 
+@dataclass
+class _BackgroundMaterializationContinuation:
+    executor: ThreadPoolExecutor
+    future: Future[dict[str, object]]
+    start: float
+    selected_focus: str
+    selected_evidence_path: Path
+    selected_evidence: dict[str, Any]
+    materialization_manifest_path: Path
+    materialization_manifest: dict[str, Any]
+    foreground_result: dict[str, object]
+    background_plan: dict[str, list[str]]
+
+
+def _unique_strings(values: Sequence[object]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if isinstance(value, str) and value and value not in result:
+            result.append(value)
+    return result
+
+
+def _plan_requests(plan: dict[str, list[str]]) -> list[str]:
+    return [
+        *list(plan.get("paper_ids", [])),
+        *list(plan.get("claim_ids", [])),
+        *list(plan.get("chain_claim_ids", [])),
+    ]
+
+
+def _empty_materialization_result(plan: dict[str, list[str]]) -> dict[str, object]:
+    return {
+        "lkm_materialize_requests": _plan_requests(plan),
+        "lkm_packages_materialized": [],
+        "lkm_chains_materialized": [],
+    }
+
+
+def _list_payload(payload: dict[str, object], key: str) -> list[object]:
+    value = payload.get(key)
+    return list(value) if isinstance(value, list) else []
+
+
+def _subset_materialization_plan(
+    plan: dict[str, list[str]],
+    *,
+    paper_ids: list[str],
+    claim_ids: list[str] | None = None,
+    chain_claim_ids: list[str] | None = None,
+) -> dict[str, list[str]]:
+    all_paper_ids = list(plan.get("paper_ids", []))
+    all_package_refs = list(plan.get("package_refs", []))
+    package_ref_by_paper = {
+        paper_id: all_package_refs[index]
+        for index, paper_id in enumerate(all_paper_ids)
+        if index < len(all_package_refs)
+    }
+    clean_paper_ids = [paper_id for paper_id in paper_ids if paper_id in all_paper_ids]
+    return {
+        "paper_ids": _unique_strings(clean_paper_ids),
+        "claim_ids": _unique_strings(list(claim_ids if claim_ids is not None else [])),
+        "chain_claim_ids": _unique_strings(
+            list(chain_claim_ids if chain_claim_ids is not None else [])
+        ),
+        "package_refs": [
+            package_ref
+            for paper_id in _unique_strings(clean_paper_ids)
+            if isinstance(package_ref := package_ref_by_paper.get(paper_id), str)
+        ],
+    }
+
+
+def _selected_anchor_paper_ids(selected_evidence: dict[str, Any]) -> list[str]:
+    paper_ids: list[object] = []
+    for anchor in selected_evidence.get("anchors", []):
+        if isinstance(anchor, dict):
+            paper_ids.append(anchor.get("paper_id"))
+    return _unique_strings(paper_ids)
+
+
+def _split_materialization_plan(
+    selected_evidence: dict[str, Any],
+    plan: dict[str, list[str]],
+    *,
+    enable_background: bool,
+) -> tuple[dict[str, list[str]], dict[str, list[str]], str]:
+    if not enable_background:
+        return (
+            _subset_materialization_plan(
+                plan,
+                paper_ids=list(plan.get("paper_ids", [])),
+                claim_ids=list(plan.get("claim_ids", [])),
+                chain_claim_ids=list(plan.get("chain_claim_ids", [])),
+            ),
+            _subset_materialization_plan(plan, paper_ids=[]),
+            "blocking_all",
+        )
+
+    selected_paper_ids = _selected_anchor_paper_ids(selected_evidence)
+    foreground = _subset_materialization_plan(
+        plan,
+        paper_ids=selected_paper_ids,
+        claim_ids=list(plan.get("claim_ids", [])),
+        chain_claim_ids=list(plan.get("chain_claim_ids", [])),
+    )
+    foreground_papers = set(foreground.get("paper_ids", []))
+    background = _subset_materialization_plan(
+        plan,
+        paper_ids=[
+            paper_id for paper_id in plan.get("paper_ids", []) if paper_id not in foreground_papers
+        ],
+    )
+    if not _plan_requests(background):
+        return (
+            _subset_materialization_plan(
+                plan,
+                paper_ids=list(plan.get("paper_ids", [])),
+                claim_ids=list(plan.get("claim_ids", [])),
+                chain_claim_ids=list(plan.get("chain_claim_ids", [])),
+            ),
+            background,
+            "blocking_all",
+        )
+    return foreground, background, "foreground_selected_background_candidates"
+
+
+def _materialize_plan(
+    runtime: ResearchOrchestratorRuntime,
+    research_pkg: ResearchPackage,
+    *,
+    plan: dict[str, list[str]],
+    lkm_index: str,
+) -> dict[str, object]:
+    if not _plan_requests(plan):
+        return _empty_materialization_result(plan)
+    return runtime.materialize_lkm_deep_evidence(
+        research_pkg,
+        paper_ids=list(plan["paper_ids"]),
+        claim_ids=list(plan["claim_ids"]),
+        chain_claim_ids=list(plan["chain_claim_ids"]),
+        lkm_index=lkm_index,
+        dry_run=False,
+    )
+
+
+def _combined_materialization_result(
+    foreground: dict[str, object],
+    background: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "lkm_materialize_requests": [
+            *_list_payload(foreground, "lkm_materialize_requests"),
+            *_list_payload(background, "lkm_materialize_requests"),
+        ],
+        "lkm_packages_materialized": [
+            item
+            for item in [
+                *_list_payload(foreground, "lkm_packages_materialized"),
+                *_list_payload(background, "lkm_packages_materialized"),
+            ]
+            if isinstance(item, dict)
+        ],
+        "lkm_chains_materialized": [
+            item
+            for item in [
+                *_list_payload(foreground, "lkm_chains_materialized"),
+                *_list_payload(background, "lkm_chains_materialized"),
+            ]
+            if isinstance(item, dict)
+        ],
+    }
+
+
+def _finish_background_materialization(
+    continuation: _BackgroundMaterializationContinuation,
+    *,
+    research_pkg: ResearchPackage,
+    run: ResearchRunStart,
+    research_mode: str,
+    json_stream: bool,
+    runtime: ResearchOrchestratorRuntime,
+) -> dict[str, Any]:
+    try:
+        background_result = continuation.future.result()
+    finally:
+        continuation.executor.shutdown(wait=True)
+    combined = _combined_materialization_result(
+        continuation.foreground_result,
+        background_result,
+    )
+    materialization_summary = _materialization_summary_payload(combined)
+    manifest = dict(continuation.materialization_manifest)
+    execution = dict(cast(dict[str, Any], manifest.get("materialization_execution")))
+    execution["background_status"] = "completed"
+    manifest["materialization_execution"] = execution
+    manifest["background_materialization_result"] = background_result
+    manifest["materialization_result"] = combined
+    manifest["materialization_summary"] = materialization_summary
+    runtime.write_json_file(continuation.materialization_manifest_path, manifest)
+
+    selected_evidence = dict(continuation.selected_evidence)
+    selected_evidence["materialization_summary"] = materialization_summary
+    runtime.write_json_file(continuation.selected_evidence_path, selected_evidence)
+    runtime.append_research_event(
+        research_pkg,
+        "run.deep_expand.background.completed",
+        {
+            "focus": continuation.selected_focus,
+            "materialization_manifest": str(continuation.materialization_manifest_path),
+            "materialization_summary": materialization_summary,
+        },
+    )
+    runtime.record_cli_trace(
+        research_pkg,
+        run,
+        start=continuation.start,
+        name="deep_expand.background",
+        mode=research_mode,
+        inputs=[str(continuation.selected_evidence_path)],
+        outputs=[str(continuation.materialization_manifest_path)],
+        metrics={
+            "background_paper_materialize_requests": len(
+                continuation.background_plan.get("paper_ids", [])
+            ),
+            "lkm_packages_materialized": materialization_summary.get(
+                "lkm_packages_materialized"
+            ),
+            "overlapped_with_assessment": True,
+        },
+    )
+    runtime.emit_run_event(
+        run,
+        event_type="phase.completed",
+        phase="deep_expand_background",
+        json_stream=json_stream,
+        payload={
+            "artifact": str(continuation.selected_evidence_path),
+            "materialization_manifest": str(continuation.materialization_manifest_path),
+            "materialization_summary": materialization_summary,
+        },
+    )
+    return selected_evidence
+
+
+def _drain_background_materialization(
+    continuation: _BackgroundMaterializationContinuation | None,
+) -> None:
+    if continuation is None:
+        return
+    try:
+        continuation.future.result()
+    except Exception:
+        pass
+    finally:
+        continuation.executor.shutdown(wait=True)
+
+
 def _run_evidence_select_and_deep_expand(
     research_pkg: ResearchPackage,
     run: ResearchRunStart,
@@ -950,9 +1210,10 @@ def _run_evidence_select_and_deep_expand(
     evidence_max_items: int,
     evidence_max_papers: int,
     evidence_max_chains: int,
+    background_materialization: bool,
     json_stream: bool,
     runtime: ResearchOrchestratorRuntime,
-) -> tuple[Path, dict[str, Any]]:
+) -> tuple[Path, dict[str, Any], _BackgroundMaterializationContinuation | None]:
     focus_payload = _focus_payload_for_selection(focus_artifact, selected_focus)
     runtime.update_run_state(run, {"phase": "evidence_select"})
     runtime.emit_run_event(
@@ -1039,14 +1300,36 @@ def _run_evidence_select_and_deep_expand(
         payload={"focus": selected_focus, "artifact": str(selected_evidence_path), "plan": plan},
     )
     start = perf_counter()
-    materialized = runtime.materialize_lkm_deep_evidence(
-        research_pkg,
-        paper_ids=list(plan["paper_ids"]),
-        claim_ids=list(plan["claim_ids"]),
-        chain_claim_ids=list(plan["chain_claim_ids"]),
-        lkm_index=lkm_index,
-        dry_run=False,
+    foreground_plan, background_plan, materialization_mode = _split_materialization_plan(
+        selected_evidence,
+        plan,
+        enable_background=background_materialization,
     )
+    materialized = _materialize_plan(
+        runtime,
+        research_pkg,
+        plan=foreground_plan,
+        lkm_index=lkm_index,
+    )
+    background_continuation: _BackgroundMaterializationContinuation | None = None
+    background_result: dict[str, object] = _empty_materialization_result(background_plan)
+    if _plan_requests(background_plan):
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gaia-research-materialize")
+        background_start = perf_counter()
+        future = executor.submit(
+            _materialize_plan,
+            runtime,
+            research_pkg,
+            plan=background_plan,
+            lkm_index=lkm_index,
+        )
+        background_status = "running"
+    else:
+        executor = None
+        future = None
+        background_start = start
+        background_status = "not_needed"
+    manifest_result = _combined_materialization_result(materialized, background_result)
     materialization_summary = _materialization_summary_payload(materialized)
     materialization_manifest = {
         "schema_version": 1,
@@ -1054,8 +1337,16 @@ def _run_evidence_select_and_deep_expand(
         "focus": selected_focus,
         "selected_evidence": str(selected_evidence_path),
         "materialization_plan": plan,
+        "materialization_execution": {
+            "mode": materialization_mode,
+            "foreground_plan": foreground_plan,
+            "background_plan": background_plan,
+            "background_status": background_status,
+        },
         "materialization_summary": materialization_summary,
-        "materialization_result": materialized,
+        "foreground_materialization_result": materialized,
+        "background_materialization_result": background_result,
+        "materialization_result": manifest_result,
     }
     materialization_manifest_path = runtime.write_artifact(
         research_pkg,
@@ -1065,6 +1356,19 @@ def _run_evidence_select_and_deep_expand(
     )
     selected_evidence["materialization_manifest"] = str(materialization_manifest_path)
     selected_evidence["materialization_summary"] = materialization_summary
+    if future is not None and executor is not None:
+        background_continuation = _BackgroundMaterializationContinuation(
+            executor=executor,
+            future=future,
+            start=background_start,
+            selected_focus=selected_focus,
+            selected_evidence_path=selected_evidence_path,
+            selected_evidence=selected_evidence,
+            materialization_manifest_path=materialization_manifest_path,
+            materialization_manifest=materialization_manifest,
+            foreground_result=materialized,
+            background_plan=background_plan,
+        )
     materialized_packages_raw = materialized.get("lkm_packages_materialized")
     materialized_packages = (
         [package for package in materialized_packages_raw if isinstance(package, dict)]
@@ -1084,6 +1388,7 @@ def _run_evidence_select_and_deep_expand(
             "artifact": str(selected_evidence_path),
             "materialization_manifest": str(materialization_manifest_path),
             "materialization_summary": materialization_summary,
+            "materialization_execution": materialization_manifest["materialization_execution"],
         },
     )
     runtime.record_cli_trace(
@@ -1116,6 +1421,7 @@ def _run_evidence_select_and_deep_expand(
                 selected_evidence,
                 "deferred_obligations",
             ),
+            "background_paper_materialize_requests": len(background_plan.get("paper_ids", [])),
         },
     )
     runtime.emit_run_event(
@@ -1127,9 +1433,12 @@ def _run_evidence_select_and_deep_expand(
             "artifact": str(selected_evidence_path),
             "materialization_manifest": str(materialization_manifest_path),
             "materialization_summary": materialization_summary,
+            "materialization_execution": materialization_manifest["materialization_execution"],
         },
     )
-    return selected_evidence_path, selected_evidence
+    if background_continuation is not None:
+        background_continuation.selected_evidence = selected_evidence
+    return selected_evidence_path, selected_evidence, background_continuation
 
 
 def _run_assessment_for_focus(
@@ -1262,8 +1571,13 @@ def _run_assessment_for_focus(
 
     selected_evidence_path: Path | None = None
     selected_evidence_artifact: dict[str, Any] | None = None
+    background_materialization_continuation: _BackgroundMaterializationContinuation | None = None
     if evidence_selection_mode != "off":
-        selected_evidence_path, selected_evidence_artifact = _run_evidence_select_and_deep_expand(
+        (
+            selected_evidence_path,
+            selected_evidence_artifact,
+            background_materialization_continuation,
+        ) = _run_evidence_select_and_deep_expand(
             research_pkg,
             run,
             focus_artifact=focus_artifact,
@@ -1276,6 +1590,9 @@ def _run_assessment_for_focus(
             evidence_max_items=evidence_max_items,
             evidence_max_papers=evidence_max_papers,
             evidence_max_chains=evidence_max_chains,
+            background_materialization=(
+                assess_analysis_json is None and analysis_provider in {"command", "litellm"}
+            ),
             json_stream=json_stream,
             runtime=runtime,
         )
@@ -1287,48 +1604,57 @@ def _run_assessment_for_focus(
     if assess_analysis_json is None:
         if analysis_provider == "command":
             if assess_analysis_command is None:
+                _drain_background_materialization(background_materialization_continuation)
                 raise ResearchOrchestratorError(
                     "--analysis-provider command requires --assess-analysis-command "
                     "when --assess-analysis-json is omitted."
                 )
-            assess_analysis_json = runtime.run_command_provider(
-                research_pkg,
-                run,
-                phase="assess_analysis",
-                command=assess_analysis_command,
-                input_payload=_analysis_provider_input(
+            try:
+                assess_analysis_json = runtime.run_command_provider(
+                    research_pkg,
+                    run,
                     phase="assess_analysis",
-                    topic=topic,
-                    language=language,
-                    contract_kind="assess",
-                    artifact_paths=assessment_input_paths,
-                    focus=selected_focus,
-                ),
-                output_name=assess_output_name,
-                json_stream=json_stream,
-            )
+                    command=assess_analysis_command,
+                    input_payload=_analysis_provider_input(
+                        phase="assess_analysis",
+                        topic=topic,
+                        language=language,
+                        contract_kind="assess",
+                        artifact_paths=assessment_input_paths,
+                        focus=selected_focus,
+                    ),
+                    output_name=assess_output_name,
+                    json_stream=json_stream,
+                )
+            except BaseException:
+                _drain_background_materialization(background_materialization_continuation)
+                raise
         elif analysis_provider == "litellm":
             resolved_model = runtime.resolve_litellm_model(assess_model or model)
-            assess_analysis_json = runtime.run_litellm_provider(
-                research_pkg,
-                run,
-                phase="assess_analysis",
-                model=resolved_model,
-                input_payload=_analysis_provider_input(
+            try:
+                assess_analysis_json = runtime.run_litellm_provider(
+                    research_pkg,
+                    run,
                     phase="assess_analysis",
-                    topic=topic,
-                    language=language,
-                    contract_kind="assess",
-                    artifact_paths=assessment_input_paths,
-                    focus=selected_focus,
-                ),
-                output_name=assess_output_name,
-                temperature=llm_temperature,
-                timeout=llm_timeout,
-                max_retries=llm_max_retries,
-                max_tokens=llm_max_tokens,
-                json_stream=json_stream,
-            )
+                    model=resolved_model,
+                    input_payload=_analysis_provider_input(
+                        phase="assess_analysis",
+                        topic=topic,
+                        language=language,
+                        contract_kind="assess",
+                        artifact_paths=assessment_input_paths,
+                        focus=selected_focus,
+                    ),
+                    output_name=assess_output_name,
+                    temperature=llm_temperature,
+                    timeout=llm_timeout,
+                    max_retries=llm_max_retries,
+                    max_tokens=llm_max_tokens,
+                    json_stream=json_stream,
+                )
+            except BaseException:
+                _drain_background_materialization(background_materialization_continuation)
+                raise
         else:
             checkpoint_path = _write_run_checkpoint(
                 run,
@@ -1378,6 +1704,7 @@ def _run_assessment_for_focus(
             repair_grounding=analysis_provider == "litellm",
         )
     except AssessmentSchemaError as exc:
+        _drain_background_materialization(background_materialization_continuation)
         runtime.update_run_state(
             run,
             {"status": "failed", "phase": "assess_sync", "error": str(exc)},
@@ -1449,6 +1776,15 @@ def _run_assessment_for_focus(
         json_stream=json_stream,
         payload={"artifact": str(assessment_path), "relations": len(assessment["relations"])},
     )
+    if background_materialization_continuation is not None:
+        selected_evidence_artifact = _finish_background_materialization(
+            background_materialization_continuation,
+            research_pkg=research_pkg,
+            run=run,
+            research_mode=research_mode,
+            json_stream=json_stream,
+            runtime=runtime,
+        )
     return {
         "focus": selected_focus,
         "landscapes": landscapes,

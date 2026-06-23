@@ -113,3 +113,28 @@ def test_workflow_obligations_cover_unassessed_and_underexpanded_focuses() -> No
     }
     assert all(item["anchor"]["gaia_research"]["auto_closeable"] is True for item in obligations)
     assert obligations[0]["target"] == {"kind": "question", "id": "ready_focus"}
+
+
+def test_human_review_focus_is_manual_assessment_obligation_not_review_action() -> None:
+    obligations = derive_workflow_obligations(
+        focus_artifact={
+            "kind": "focus_synthesis",
+            "focuses": [
+                {
+                    "id": "manual_focus",
+                    "status": "candidate",
+                    "question": "Should a human inspect this focus before assessment?",
+                    "priority": "medium",
+                    "readiness": "needs_human_review",
+                    "evidence_refs": [{"kind": "variable", "id": "v4"}],
+                }
+            ],
+            "coverage_gaps": [],
+        },
+        assessed_focus_ids=set(),
+    )
+
+    assert [item["action_type"] for item in obligations] == ["assess_focus"]
+    assert obligations[0]["anchor"]["gaia_research"]["auto_closeable"] is False
+    assert obligations[0]["anchor"]["gaia_research"]["budget_class"] == "assessment"
+    assert "review_focus" not in str(obligations[0])

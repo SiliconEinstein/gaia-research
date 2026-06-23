@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any, cast
 
@@ -64,6 +65,41 @@ def _search_json(path: Path) -> Path:
                 },
                 "rank": {"score": 0.9},
             }
+        ],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _search_json_with_background_candidate(path: Path) -> Path:
+    payload = {
+        "schema_version": 1,
+        "query": {"text": "aspirin evidence", "provider": "lkm", "kind": "knowledge"},
+        "results": [
+            {
+                "id": "var_aspree",
+                "kind": "claim",
+                "title": "ASPREE net benefit",
+                "content": "ASPREE reported no cardiovascular benefit.",
+                "source": {
+                    "provider_id": "var_aspree",
+                    "paper_id": "P_ASPREE",
+                    "paper_title": "ASPREE trial",
+                    "index_id": "bohrium",
+                },
+            },
+            {
+                "id": "var_other",
+                "kind": "claim",
+                "title": "Background aspirin evidence",
+                "content": "Another trial gives background context.",
+                "source": {
+                    "provider_id": "var_other",
+                    "paper_id": "P_OTHER",
+                    "paper_title": "Other aspirin trial",
+                    "index_id": "bohrium",
+                },
+            },
         ],
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -550,6 +586,80 @@ class _HydratingRuntime(_Runtime):
         }
 
 
+class _BackgroundMaterializationRuntime(_Runtime):
+    def __init__(self, assess_path: Path) -> None:
+        self.assess_path = assess_path
+        self.materialize_calls: list[list[str]] = []
+        self.background_started = threading.Event()
+        self.allow_background_finish = threading.Event()
+
+    def materialize_lkm_deep_evidence(
+        self,
+        research_pkg: ResearchPackage,
+        *,
+        paper_ids: list[str],
+        claim_ids: list[str],
+        chain_claim_ids: list[str],
+        lkm_index: str,
+        dry_run: bool,
+    ) -> dict[str, object]:
+        _ = research_pkg, claim_ids, chain_claim_ids, lkm_index, dry_run
+        self.materialize_calls.append(list(paper_ids))
+        if paper_ids == ["P_OTHER"]:
+            self.background_started.set()
+            assert self.allow_background_finish.wait(timeout=5.0)
+            return {
+                "lkm_materialize_requests": ["P_OTHER"],
+                "lkm_packages_materialized": [
+                    {
+                        "requested_source_ref": "lkm:bohrium:paper:P_OTHER",
+                        "source_ref": "lkm:bohrium:paper:P_OTHER",
+                        "path": "/tmp/other",
+                        "package": "other-pkg-gaia",
+                        "import_name": "other_pkg",
+                        "claim_count": 1,
+                        "question_count": 0,
+                        "dependency_count": 0,
+                        "symbol_refs": [],
+                    }
+                ],
+                "lkm_chains_materialized": [],
+            }
+        assert paper_ids == ["P_ASPREE"]
+        return {
+            "lkm_materialize_requests": ["P_ASPREE"],
+            "lkm_packages_materialized": [
+                {
+                    "requested_source_ref": "lkm:bohrium:paper:P_ASPREE",
+                    "source_ref": "lkm:bohrium:paper:P_ASPREE",
+                    "path": "/tmp/aspree",
+                    "package": "aspree-pkg-gaia",
+                    "import_name": "aspree_pkg",
+                    "claim_count": 1,
+                    "question_count": 0,
+                    "dependency_count": 0,
+                    "symbol_refs": [
+                        {
+                            "node_id": "var_aspree",
+                            "local_id": "var_aspree",
+                            "kind": "claim",
+                            "symbol": "net_benefit",
+                            "ref": "lkm:aspree_pkg::net_benefit",
+                            "source_ref": "lkm:bohrium:paper:P_ASPREE",
+                        }
+                    ],
+                }
+            ],
+            "lkm_chains_materialized": [],
+        }
+
+    def run_litellm_provider(self, *_args: object, **kwargs: object) -> str:
+        assert kwargs["phase"] == "assess_analysis"
+        assert self.background_started.wait(timeout=5.0)
+        self.allow_background_finish.set()
+        return str(self.assess_path)
+
+
 class _UnresolvedAnchorRuntime(_Runtime):
     def materialize_lkm_deep_evidence(
         self,
@@ -790,6 +900,78 @@ def test_deep_expand_hydrates_selected_evidence_refs_before_assessment(
     assert selected_evidence["evidence_packet"]["items"][0]["package_ref"]["ref"] == (
         "lkm:aspree_pkg::net_benefit"
     )
+
+
+def test_litellm_assessment_backgrounds_unselected_candidate_materialization(
+    tmp_path: Path,
+) -> None:
+    research_pkg = _write_research_package(tmp_path / "research-demo-gaia")
+    run = start_research_run(
+        research_pkg,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        profile="fast",
+        run_id="background-materialization",
+        wait_for_query_plan=False,
+    )
+    runtime = _BackgroundMaterializationRuntime(
+        _assess_analysis_with_hydrated_ref_json(tmp_path / "assess.json")
+    )
+
+    execute_file_provider_run(
+        research_pkg,
+        run,
+        topic="aspirin evidence",
+        mode="fast-package-native",
+        language="en",
+        search_json=[str(_search_json_with_background_candidate(tmp_path / "search.json"))],
+        focus_analysis_json=str(_focus_analysis_json(tmp_path / "focus.json")),
+        targeted_search_json=[],
+        targeted_query=[],
+        focus=None,
+        focus_count=1,
+        assess_analysis_json=None,
+        analysis_provider="litellm",
+        model="test-model",
+        focus_model=None,
+        assess_model=None,
+        llm_temperature=0.0,
+        llm_timeout=30.0,
+        llm_max_retries=0,
+        llm_max_tokens=None,
+        report_section_concurrency=1,
+        search_index="bohrium",
+        search_limit=20,
+        reasoning_only=True,
+        evidence_selection_mode="fast",
+        evidence_max_items=1,
+        evidence_max_papers=1,
+        evidence_max_chains=3,
+        focus_analysis_command=None,
+        assess_analysis_command=None,
+        json_stream=False,
+        runtime=runtime,
+    )
+
+    assert runtime.materialize_calls == [["P_ASPREE"], ["P_OTHER"]]
+    state = json.loads(run.state_path.read_text(encoding="utf-8"))
+    selected_evidence = json.loads(
+        Path(state["artifacts"]["selected_evidence"]).read_text(encoding="utf-8")
+    )
+    manifest = json.loads(
+        Path(selected_evidence["materialization_manifest"]).read_text(encoding="utf-8")
+    )
+    assert manifest["materialization_execution"]["mode"] == (
+        "foreground_selected_background_candidates"
+    )
+    assert manifest["materialization_execution"]["foreground_plan"]["paper_ids"] == ["P_ASPREE"]
+    assert manifest["materialization_execution"]["background_plan"]["paper_ids"] == ["P_OTHER"]
+    assert [
+        item["source_ref"]
+        for item in manifest["materialization_result"]["lkm_packages_materialized"]
+    ] == ["lkm:bohrium:paper:P_ASPREE", "lkm:bohrium:paper:P_OTHER"]
+    assert selected_evidence["anchors"][0]["ref"] == "lkm:aspree_pkg::net_benefit"
 
 
 def test_graph_assets_summary_records_package_anchors_claims_relations_and_matrix(

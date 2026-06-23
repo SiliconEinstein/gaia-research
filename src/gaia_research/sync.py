@@ -510,7 +510,7 @@ def _diagnostic_kind_for_obligation(*, raw_kind: str, action_type: str) -> str:
         return "support_weak"
     if action_type in {"resolve_anchor", "materialize_package", "repair_relation", "repair_refs"}:
         return "structural_hole"
-    if action_type in {"assess_focus", "expand_focus", "review_focus", "close_coverage_gap"}:
+    if action_type in {"assess_focus", "expand_focus", "close_coverage_gap"}:
         return "focus_weakness"
     return "other"
 
