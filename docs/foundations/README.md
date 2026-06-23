@@ -11,6 +11,9 @@ from those primitives.
 
 Current foundation documents:
 
+- [Gaia-Native Research MVP](gaia-native-research-mvp.md): smallest graph-first
+  research workflow centered on questions, candidate claims, candidate
+  relations, evidence-matrix projection, and open obligations.
 - [Research Prompts](research-prompts.md): ownership, loading, and iteration
   policy for `gaia research run` LLM prompts.
 
