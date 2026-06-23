@@ -52,6 +52,70 @@ def _landscape() -> dict[str, object]:
     }
 
 
+def test_selected_evidence_marks_expand_records_as_new() -> None:
+    scan_landscape = {
+        "kind": "research_landscape",
+        "action": "explore.scan",
+        "items": [
+            {
+                "kind": "variable",
+                "id": "claim_scan",
+                "variable_type": "claim",
+                "content": "Prior scan claim about baseline models.",
+                "source": {"paper_id": "P_SCAN", "paper_title": "Scan paper"},
+            }
+        ],
+        "paper_leads": [
+            {
+                "paper_id": "P_SCAN",
+                "title": "Scan paper",
+                "variable_ids": ["claim_scan"],
+            }
+        ],
+    }
+    expand_landscape = {
+        "kind": "research_landscape",
+        "action": "explore.expand",
+        "items": [
+            {
+                "kind": "variable",
+                "id": "claim_expand",
+                "variable_type": "claim",
+                "content": "Focused expansion claim about vertex divergences.",
+                "source": {"paper_id": "P_EXPAND", "paper_title": "Expand paper"},
+            }
+        ],
+        "paper_leads": [
+            {
+                "paper_id": "P_EXPAND",
+                "title": "Expand paper",
+                "variable_ids": ["claim_expand"],
+            }
+        ],
+    }
+
+    artifact = build_selected_evidence_artifact(
+        focus={"kind": "focus", "id": "vertex", "title": "vertex divergences"},
+        landscapes=[scan_landscape, expand_landscape],
+        max_items=2,
+        max_papers=2,
+    )
+
+    items_by_id = {
+        item["id"]: item for item in artifact["evidence_packet"]["items"]
+    }
+    leads_by_id = {
+        lead["paper_id"]: lead for lead in artifact["evidence_packet"]["paper_leads"]
+    }
+
+    assert items_by_id["claim_expand"]["source_landscape_action"] == "explore.expand"
+    assert items_by_id["claim_expand"]["is_new"] is True
+    assert leads_by_id["P_EXPAND"]["source_landscape_action"] == "explore.expand"
+    assert leads_by_id["P_EXPAND"]["is_new"] is True
+    assert items_by_id["claim_scan"]["source_landscape_action"] == "explore.scan"
+    assert items_by_id["claim_scan"]["is_new"] is False
+
+
 def test_selected_evidence_prefers_focus_matching_items_and_plans_deep_pull() -> None:
     artifact = build_selected_evidence_artifact(
         focus={"kind": "focus", "id": "weak-first-order", "title": "weak first order"},
@@ -69,12 +133,16 @@ def test_selected_evidence_prefers_focus_matching_items_and_plans_deep_pull() ->
             "title": "Opposition paper",
             "variable_ids": ["claim_oppose"],
             "landscape_index": 0,
+            "source_landscape_action": "explore.expand",
+            "is_new": True,
         },
         {
             "paper_id": "P_SUPPORT",
             "title": "Support paper",
             "variable_ids": ["claim_support"],
             "landscape_index": 0,
+            "source_landscape_action": "explore.expand",
+            "is_new": True,
         },
     ]
     assert artifact["materialization_plan"] == {
