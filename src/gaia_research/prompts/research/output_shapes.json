@@ -91,6 +91,12 @@
   },
   "obligation_policy": {
     "required_top_level_keys": ["rankings"],
+    "supported_action_types": [
+      "assess_focus",
+      "expand_focus",
+      "search_more_evidence",
+      "close_coverage_gap"
+    ],
     "rankings_item_keys": [
       "target_qid",
       "action_type",
@@ -101,7 +107,7 @@
       "coverage_gain",
       "cost"
     ],
-    "note": "Rank only obligations present in input.obligations; the scheduler validates supported action types and budget."
+    "note": "Rank only executable obligations present in input.obligations; action_type must be one of supported_action_types and must be copied directly from the input obligation."
   },
   "report_plan": {
     "required_top_level_keys": [

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 
-from gaia_research.contracts import assess_contract, field_map_contract, query_plan_contract
+from gaia_research.contracts import (
+    assess_contract,
+    field_map_contract,
+    obligation_policy_contract,
+    query_plan_contract,
+)
 
 
 def test_field_map_contract_describes_autonomous_review_taxonomy() -> None:
@@ -67,3 +72,18 @@ def test_assess_contract_keeps_assessment_structured_not_article_shaped() -> Non
     assert "mini-review" in payload
     assert "new_claims" in payload
     assert "lkm:<package>::<label>" in payload
+
+
+def test_obligation_policy_contract_only_allows_executable_actions() -> None:
+    contract = obligation_policy_contract(language="zh")
+    payload = json.dumps(contract, ensure_ascii=False)
+
+    assert contract["contract"] == "gaia.research.obligation_policy"
+    assert contract["supported_action_types"] == [
+        "assess_focus",
+        "expand_focus",
+        "search_more_evidence",
+        "close_coverage_gap",
+    ]
+    assert "review_focus" not in payload
+    assert "mapped_executable_action" not in payload

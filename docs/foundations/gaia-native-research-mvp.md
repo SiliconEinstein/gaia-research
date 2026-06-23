@@ -127,6 +127,18 @@ must not embed the full package materialization result. The full result belongs
 in a separate `evidence_materialization` artifact that can be inspected or
 replayed without flooding assessment prompts.
 
+Materialization execution may split the plan without changing ownership of the
+primitive. For LLM or command assessment runs, Gaia Research may synchronously
+materialize only the paper packages needed to resolve selected anchors, then run
+remaining candidate-paper materialization in the background while assessment
+analysis is happening. Both foreground and background paths must still call the
+same Gaia core paper-dependency materialization path; Gaia Research must not
+copy LKM payload fetching, package generation, or dependency mutation logic. The
+manifest records `foreground_plan`, `background_plan`, foreground/background
+results, and the combined materialization result. Checkpoint/file-provider paths
+can keep blocking full materialization because there is no useful assessment
+work to overlap.
+
 Graph-assets output should therefore expose a corpus funnel separately from the
 assessment funnel:
 
@@ -387,10 +399,13 @@ state, the dispatcher should call that API from the same execution hook.
 With `analysis_provider=litellm`, each loop iteration may request a compact
 `gaia.research.obligation_policy` JSON object. The policy scores existing
 obligations by report impact, uncertainty reduction, coverage gain, and cost.
-It cannot create obligations or bypass validation: the scheduler only honors a
-policy entry if it matches an existing supported candidate within budget. If the
-policy does not match a valid candidate, the deterministic priority order is the
-fallback.
+It cannot create obligations or bypass validation. The policy must output only
+executable `action_type` values from the scheduler whitelist: `assess_focus`,
+`expand_focus`, `search_more_evidence`, and `close_coverage_gap`. Alias fields
+or non-executable choices such as `review_focus` are invalid policy output. The
+scheduler only honors a policy entry if it matches an existing supported
+candidate within budget. If the policy does not match a valid candidate, the
+deterministic priority order is the fallback.
 
 ## Profile And Budget Model
 
@@ -486,6 +501,8 @@ requirements for graph-asset success.
      a backing `lkm:<index>:paper:<paper_id>` whenever possible.
    - Default materialization must call Gaia core's paper dependency path,
      equivalent to `gaia pkg add --lkm-paper <paper_id>`.
+   - Background or parallel execution is a scheduling optimization around that
+     same core path, not a second implementation of LKM package materialization.
    - `gaia pkg add --lkm-claim` and chain materialization remain resolver or
      deep-evidence fallbacks, not the main path.
    - Store the original LKM hit id or node id.
@@ -572,6 +589,8 @@ requirements for graph-asset success.
      separately.
    - Optional LLM policy scoring may reorder supported candidates according to
      current research value, but may not invent or execute unsupported actions.
+   - Policy output must use the executable action whitelist directly and must
+     not introduce aliases such as `review_focus`.
    - Profiles control loop iterations; per-action guardrails remain shared.
 
 2. Keep report generation outside the MVP default path.
@@ -627,6 +646,7 @@ tasks:
       - "Selected LKM knowledge/package/reasoning hits resolve to one backing paper source ref when possible."
       - "The MVP path uses paper dependency materialization, equivalent to gaia pkg add --lkm-paper, by default."
       - "Candidate corpus paper materialization is not capped by assessment or prompt-selection budgets."
+      - "LLM/command assessment runs may foreground selected-anchor paper packages and background remaining candidate-paper packages without copying Gaia core materialization internals."
       - "Selected-evidence and graph-assets artifacts expose candidate corpus, materialization, and selected-assessment counts separately."
       - "The same paper cannot be installed once as a shallow source package and again as an LKM paper dependency."
       - "Each selected hit keeps hit id or node id, kind, backing paper source ref, import name, symbol, and claim/question ref when resolved."

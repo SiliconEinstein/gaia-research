@@ -50,6 +50,150 @@ def test_report_command_is_not_registered(capsys: pytest.CaptureFixture[str]) ->
     assert "No such command" in capsys.readouterr().err
 
 
+def _write_visualization_fixture(workspace: Path, run_id: str) -> Path:
+    handle, _state = create_report_run(
+        workspace,
+        topic="deconfined criticality",
+        profile="fast",
+        run_id=run_id,
+    )
+    record_event(handle, "landscape.completed", phase="landscape")
+    trace_dir = handle.run_dir / "trace"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    (trace_dir / "trace.jsonl").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "step": "graph_assets.evaluate",
+                "kind": "cli",
+                "status": "ok",
+                "wall_seconds": 1.25,
+                "ts_end": "2026-06-23T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (trace_dir / "benchmark.json").write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "steps": 1,
+                    "total_wall_seconds": 1.25,
+                    "total_input_tokens": 10,
+                    "total_output_tokens": 5,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (trace_dir / "obligations.json").write_text(
+        json.dumps(
+            {
+                "executions": [
+                    {
+                        "action_type": "assess_focus",
+                        "target_qid": "continuous-vs-weak-first",
+                        "status": "completed",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    graph_assets_path = handle.run_dir / "graph_assets" / "graph_assets.json"
+    graph_assets_path.parent.mkdir(parents=True, exist_ok=True)
+    graph_assets_path.write_text(
+        json.dumps(
+            {
+                "kind": "gaia_research_graph_assets",
+                "success_evaluation": {"success": True, "missing": []},
+                "anchors": [{"ref": "lkm:dqcp_pkg::claim_1"}],
+                "claims": [{"label": "weak_first_order_not_excluded"}],
+                "candidate_relations": [
+                    {
+                        "id": "candidate_relation_1",
+                        "relation_type": "qualifies",
+                        "claim_refs": [
+                            {"ref": "lkm:dqcp_pkg::claim_1"},
+                            {"ref": "research_claim_weak_first_order"},
+                        ],
+                    }
+                ],
+                "evidence_matrix": [
+                    {
+                        "relation_id": "candidate_relation_1",
+                        "claim_ref": "research_claim_weak_first_order",
+                    }
+                ],
+                "open_obligations": [{"target_qid": "continuous-vs-weak-first"}],
+                "deferred_obligations": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    selected_evidence_path = handle.assessments_dir / "selected_evidence.json"
+    selected_evidence_path.write_text(
+        json.dumps(
+            {
+                "kind": "selected_evidence",
+                "selection": {"focus_id": "continuous-vs-weak-first"},
+                "evidence_packet": {"items": [{"id": "e1"}]},
+                "anchors": [{"ref": "lkm:dqcp_pkg::claim_1"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = json.loads(handle.state_path.read_text(encoding="utf-8"))
+    state["artifacts"]["graph_assets"] = str(graph_assets_path)
+    state["artifacts"]["selected_evidence"] = str(selected_evidence_path)
+    handle.state_path.write_text(json.dumps(state), encoding="utf-8")
+    return handle.run_dir
+
+
+def test_visualize_command_generates_static_html(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = _write_research_package(tmp_path / "workspace")
+    _write_visualization_fixture(workspace, "dqcp-fast")
+    output = tmp_path / "dqcp-visualize.html"
+
+    exit_code = cli.main(
+        ["visualize", str(workspace), "--run-id", "dqcp-fast", "--out", str(output)]
+    )
+
+    assert exit_code == 0
+    assert f"visualization_html: {output}" in capsys.readouterr().out
+    html = output.read_text(encoding="utf-8")
+    assert "Gaia Research Package Visualization" in html
+    assert "Persisted Content" in html
+    assert "Execution Trace" in html
+    assert "candidate_relation_1" in html
+
+
+def test_visualize_command_can_emit_json_payload(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = _write_research_package(tmp_path / "workspace")
+    _write_visualization_fixture(workspace, "dqcp-fast")
+
+    exit_code = cli.main(["visualize", str(workspace), "--run-id", "dqcp-fast", "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["kind"] == "gaia_research_package_visualization"
+    assert payload["persistent_content"]["graph_assets"]["counts"] == {
+        "anchors": 1,
+        "claims": 1,
+        "candidate_relations": 1,
+        "evidence_matrix_rows": 1,
+        "open_obligations": 1,
+        "deferred_obligations": 0,
+    }
+
+
 def test_status_command_reads_report_workflow_state(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

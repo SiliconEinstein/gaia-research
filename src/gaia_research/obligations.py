@@ -123,7 +123,7 @@ def make_research_obligation(
     return record
 
 
-def _focus_action_for_readiness(focus: JsonDict) -> tuple[str, str, str, bool] | None:
+def _focus_action_for_readiness(focus: JsonDict) -> tuple[str, str, str, bool, bool] | None:
     focus_id = _clean_text(focus.get("id"))
     readiness = _clean_text(focus.get("readiness"))
     if focus_id is None or readiness is None:
@@ -142,12 +142,14 @@ def _focus_action_for_readiness(focus: JsonDict) -> tuple[str, str, str, bool] |
             f"Expand focus {focus_id} before assessment.{query_note}",
             "expansion",
             True,
+            True,
         )
     if readiness == "needs_human_review":
         return (
-            "review_focus",
-            f"Review focus {focus_id} before automatic assessment.",
-            "focus_review",
+            "assess_focus",
+            f"Human-review focus {focus_id} before automatic assessment.",
+            "assessment",
+            False,
             True,
         )
     return None
@@ -209,7 +211,7 @@ def derive_workflow_obligations(
         readiness_action = _focus_action_for_readiness(focus)
         if readiness_action is None:
             continue
-        action_type, action, budget_class, blocking = readiness_action
+        action_type, action, budget_class, auto_closeable, blocking = readiness_action
         append_once(
             make_research_obligation(
                 target=target,
@@ -218,7 +220,7 @@ def derive_workflow_obligations(
                 content=action,
                 diagnostic_kind="focus_weakness",
                 obligation_type="workflow",
-                auto_closeable=True,
+                auto_closeable=auto_closeable,
                 blocking=blocking,
                 budget_class=budget_class,
                 source="focus_artifact",

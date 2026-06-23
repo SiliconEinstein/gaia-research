@@ -73,6 +73,10 @@ from gaia_research.run import (
     ResearchRunStart,
     start_research_run,
 )
+from gaia_research.visualize_html import (
+    build_visualization_payload,
+    write_visualization_html,
+)
 
 research_app = typer.Typer(
     name="research",
@@ -229,6 +233,14 @@ def _capabilities_payload() -> dict[str, object]:
             "artifacts": {
                 "purpose": "Index generated run artifacts for user-facing presentation.",
                 "agent_form": "gaia research artifacts <pkg> --run-id <run-id> --json",
+            },
+            "visualize": {
+                "purpose": (
+                    "Render a static HTML visualization of persistent graph assets and run trace."
+                ),
+                "agent_form": (
+                    "gaia research visualize <pkg> --run-id <run-id> --out visualize.html"
+                ),
             },
             "report": {
                 "purpose": "Render a research JSON artifact as readable Markdown.",
@@ -1053,6 +1065,32 @@ def artifacts_command(
         for item in files:
             if isinstance(item, dict):
                 typer.echo(f"- {item['kind']}: {item['path']}")
+
+
+@research_app.command("visualize")
+def visualize_command(
+    pkg: Annotated[str, typer.Argument(help="Path to a research workspace or Gaia package.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Report workflow run id.")],
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Output HTML path. Defaults to the run directory."),
+    ] = None,
+    json_out: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the visualization payload instead of HTML."),
+    ] = False,
+) -> None:
+    """Render a static HTML visualization of graph assets and execution trace."""
+    try:
+        if json_out:
+            payload = build_visualization_payload(Path(pkg), run_id)
+            typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+            return
+        output = write_visualization_html(Path(pkg), run_id, out)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"visualization_html: {output}")
 
 
 @trace_app.command("record")
